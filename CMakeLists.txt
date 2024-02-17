@@ -36,6 +36,7 @@ add_library(BigNumberSystem
 	BigInteger.hpp
 	BigInteger.cpp
 	BigFraction.hpp
+	BigFraction.cpp
 	PrimeNumberTester.hpp
 	PrimeNumberTester.cpp
 )
@@ -52,7 +53,11 @@ add_library(CryptographyAsymmetricKey
 )
 target_link_libraries(CryptographyAsymmetricKey PRIVATE BigNumberSystem)
 
-add_executable(TestCryptography main.cpp)
+add_executable(TestCryptography
+	BigIntegerTest.hpp
+	BigIntegerTest.cpp
+	main.cpp
+)
 target_link_libraries(TestCryptography PRIVATE CryptographySymmetricKey CryptographyAsymmetricKey)
 
 if (CMAKE_VERSION VERSION_GREATER 3.12)

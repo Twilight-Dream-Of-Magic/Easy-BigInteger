@@ -1,3 +1,30 @@
+/*
+MIT License
+
+Copyright (c) 2024 Twilight-Dream & With-Sky
+
+https://github.com/Twilight-Dream-Of-Magic/
+https://github.com/With-Sky
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
 #include "BinaryCipherTest.hpp"
 
 using BigInteger = TwilightDream::BigInteger::BigInteger;
@@ -207,7 +234,7 @@ void BinaryCipher::KeyExpansion( const BigInteger& BitsKey, BigInteger& BitsExpa
 	//BitsKey is 256 Bit
 	//BitsExpansionKey is 512 Bit
 
-	size_t length_bits = BitsKey.BitSize();
+	size_t length_bits = BitsKey.BitLength();
 
 	/*Key Padding*/
 	if(length_bits < 264)
@@ -238,7 +265,7 @@ void BinaryCipher::KeyExpansion( const BigInteger& BitsKey, BigInteger& BitsExpa
 	}
 
 	BigInteger TemporaryState( BitsExpansionKey );
-	BigInteger TemporaryState2 = BigInteger::BigInteger( Bitset512SizeZero );
+	BigInteger TemporaryState2 = BigInteger( Bitset512SizeZero );
 
 	/*PRF*/
 	BigInteger RandomA( Bitset512SizeZero ), RandomB( Bitset512SizeZero ), RandomC( Bitset512SizeZero ), RandomD( Bitset512SizeZero ), RandomE( Bitset512SizeZero ), RandomF( Bitset512SizeZero ), RandomG( Bitset512SizeZero ), RandomH( Bitset512SizeZero ), RandomI( Bitset512SizeZero );

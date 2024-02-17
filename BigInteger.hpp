@@ -1,9 +1,37 @@
-//Reference code: https://github.com/NoahBz/Easy-BigInt/blob/main/BigInt.h
+/*
+MIT License
 
-#pragma once
+Copyright (c) 2024 Twilight-Dream & With-Sky
+
+https://github.com/Twilight-Dream-Of-Magic/
+https://github.com/With-Sky
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
+#ifndef TWILIGHT_DREAM_BIG_INTEGER_HPP
+#define TWILIGHT_DREAM_BIG_INTEGER_HPP
+
+#include <cmath>
+#include <cstdint>
 
 #include <iostream>
-#include <cmath>
 #include <string>
 #include <algorithm>
 #include <vector>
@@ -13,9 +41,6 @@
 #include <complex>
 #include <functional>
 #include <type_traits>
-#include <cstdint>
-#include <intrin.h>
-#include <immintrin.h>
 #include <random>
 #include <bitset>
 
@@ -27,526 +52,54 @@ namespace TwilightDream
 namespace TwilightDream::BigInteger
 {
 	using digit_type = uint64_t;
+	constexpr uint32_t DIGIT_BITS = std::numeric_limits<digit_type>::digits;
+	constexpr uint32_t DIGIT_BYTES = DIGIT_BITS / CHAR_BIT;
 
-	/*
-		Caution!
-		Here the BASE constant can only be set to a maximum of 2 to the 32nd power, and the EXPONENT constant is set to 32
-		Because we have to reserve half of the range of values as overflow space for each element (digit) of the values array, even though the "digit_type" type we use is a 64-bit number.
-		Although this guarantees computational accuracy and is very unlikely to overflow the value range, we have BASE set to 2**32 here, which is actually very extreme.
-		So actually the optimal should be set to 2**28, which is 2**28 = 268435456
-		Then the same thing.
-		The BASE constant can be set to the 64th power of 2 if you want, but the "digit_type" type would have to use a 128 bit number.
-		And change the EXPONENT constant to 64, in which case it would actually be optimal to set it to 60, i.e. 64 - 4 = 60
-	*/
-
-	// Set max binary bit count the values[index]
-	inline static const uint16_t EXPONENT_VALUE = 32;
-	inline static const uint16_t EXPONENT_FHT_UI16 = 16;
-	inline static const uint16_t EXPONENT_VALUE2 = std::numeric_limits<digit_type>::digits / 2;
-	inline static const uint16_t EXPONENT = EXPONENT_VALUE < EXPONENT_VALUE2 ? EXPONENT_VALUE : EXPONENT_VALUE2;
-
-	//TODO
-	//The limit is now a 64-bit type, try opening up more bits !!!
-	using FHT_BITS_TYPE = std::conditional<EXPONENT <= 64, std::uint32_t, std::uint64_t>::type;
-
-	// Set max value of the values[index]
-	// 65536, 536870912, 2147483648, 4294967296, 18446744073709551616
-	inline static const uint64_t BASE = digit_type(pow(2, EXPONENT));
-	
-	constexpr int BASE_MULTIPLY_LIMIT = 120; // 0-120 Base
-	constexpr int FHT_MULTIPLY_LIMIT = 65536; // 120 - 65536 FHT, 65536 - inf, : Karatsuba
-
-	constexpr int BINARY_SEARCH_DIVISION_LIMIT = 4; //0-4 binary
-	constexpr int SHORT_DIVISION_LIMIT = 10;		// 4 - 10 short
-	constexpr int DONALD_KNUTH_LONG_DIVISION_LIMIT = 20;// 10 - 20 Knuth, Max of knuth, Min of Newton
-	constexpr int MULTI_THREAD_LIMIT = 10000;
-	constexpr bool MULTI_THREAD = true;
-	constexpr uint64_t STACK_LIMIT = 4096;
-
-	inline std::random_device TrueRandomDevice;
-	inline std::default_random_engine RandomEngine( TrueRandomDevice() );
-	inline std::uniform_int_distribution<uint64_t> UniformIntDistribution( 0, BASE - 1 );
-
-	namespace HyperIntegerFunctions
+	/**
+	 * @brief Check if the current platform is Little Endian.
+	 * 
+	 * @return true if the platform is Little Endian, false otherwise.
+	 */
+	inline const bool is_little_endian()
 	{
-		using Float32 = float;
-		using Float64 = double;
-		using Complex32 = std::complex<Float32>;
-		using Complex64 = std::complex<Float64>;
+		const uint64_t value = 1;
+		return *reinterpret_cast<const char*>( &value ) == 1;
+	}
 
-		constexpr Float64 HINT_PI = 3.141592653589793238462643;
-		constexpr Float64 HINT_2PI = HINT_PI * 2;
-		constexpr size_t  FHT_MAX_LEN = size_t( 1 ) << 18;	// The max length of FHT to avoid the overflow of float64
+	/**
+	 * @brief Universal byte order conversion, implemented based on bitwise operations, applicable to all integer types (cross-platform).
+	 * 
+	 * @tparam T The type of the value to perform byte order conversion.
+	 * @param value The value to be byte order converted.
+	 * @return The byte order converted value.
+	 */
+	template <typename T, typename std::enable_if<std::is_integral_v<T>>::type* = nullptr>
+	constexpr T endian_swap( T value )
+	{
+		static_assert( !std::is_same<T, bool>::value, "bool is not supported" );
+		// For integer types of 8 bits or less, no byte order conversion is needed
+		if ( sizeof( T ) == 1 )
+			return value;
 
-		template <typename T>
-		constexpr T int_floor2( T n )
+		if constexpr ( sizeof( T ) == 2 )  // 16-bit integers
 		{
-			constexpr int bits = sizeof( n ) * 8;
-			for ( int i = 1; i < bits; i *= 2 )
-			{
-				n |= ( n >> i );
-			}
-			return ( n >> 1 ) + 1;
+			return ( ( ( value & 0x00FFU ) << 8 ) | ( ( value & 0xFF00U ) >> 8 ) );
 		}
-
-		template <typename T>
-		constexpr T int_ceil2( T n )
+		else if constexpr ( sizeof( T ) == 4 )	// 32-bit integers
 		{
-			constexpr int bits = sizeof( n ) * 8;
-			n--;
-			for ( int i = 1; i < bits; i *= 2 )
-			{
-				n |= ( n >> i );
-			}
-			return n + 1;
+			constexpr uint32_t bit_mask = 0x00FF00FF;
+			value = ( ( value & bit_mask ) << 8 ) | ( ( value >> 8 ) & bit_mask );
+			return ( value << 16 ) | ( value >> 16 );
 		}
-
-		//log2(n) of integer
-		template <typename T>
-		constexpr int hint_log2( T n )
+		else if constexpr ( sizeof( T ) == 8 )	// 64-bit integers
 		{
-			constexpr int bits = sizeof( n ) * 8;
-			int			  l = -1, r = bits;
-			while ( ( l + 1 ) != r )
-			{
-				int mid = ( l + r ) / 2;
-				if ( ( T( 1 ) << mid ) > n )
-				{
-					r = mid;
-				}
-				else
-				{
-					l = mid;
-				}
-			}
-			return l;
+			constexpr uint64_t bit_mask0 = 0x00FF00FF00FF00FF;
+			constexpr uint64_t bit_mask1 = 0x0000FFFF0000FFFF;
+			value = ( ( value & bit_mask0 ) << 8 ) | ( ( value >> 8 ) & bit_mask0 );
+			value = ( ( value & bit_mask1 ) << 16 ) | ( ( value >> 16 ) & bit_mask1 );
+			return ( value << 32 ) | ( value >> 32 );
 		}
-
-		// namespace of fft and fft like algorithm
-		namespace Transform
-		{
-			template <typename T>
-			inline void Transform_TwoPoint( T& sum, T& diff )
-			{
-				T temp0 = sum, temp1 = diff;
-				sum = temp0 + temp1;
-				diff = temp0 - temp1;
-			}
-			// Point of unit circle
-			template <typename FloatTy>
-			inline auto UnitCircleRoot( FloatTy theta )
-			{
-				return std::polar<FloatTy>( 1.0, theta );
-			}
-
-			namespace AlgorithmFHT
-			{
-				// Look up table of unit roots
-				template <typename FloatTy>
-				class DynamicTable
-				{
-				public:
-					using Complex = std::complex<FloatTy>;
-					using CompVec = std::vector<Complex>;
-					
-					DynamicTable() {}
-					DynamicTable( int log_len, int factor, bool conj = false )
-					{
-						size_t vec_len = ( 1 << log_len ) / 4;
-						table = CompVec( vec_len );
-						init( factor, conj );
-					}
-
-					void init( int factor, bool conj )
-					{
-						size_t	len = table.size() * 4;
-						FloatTy unity = -HINT_2PI * factor / len;
-						if ( conj )
-						{
-							unity = -unity;
-						}
-						for ( size_t i = 0; i < table.size(); i++ )
-						{
-							table[ i ] = UnitCircleRoot( unity * i );
-						}
-					}
-
-					const Complex& operator[]( size_t n ) const
-					{
-						return table[ n ];
-					}
-					Complex& operator[]( size_t n )
-					{
-						return table[ n ];
-					}
-					auto get_it( size_t n = 0 )
-					{
-						return &table[ n ];
-					}
-
-				private:
-					CompVec table;
-				};
-
-				// The Fast Hartley Transform
-				// Reference:
-				// [1] J¨org Arndt.Matters Computational[M].Heidelberg:Springer Berlin,2011:515-533.
-				// https://doi.org/10.1007/978-3-642-14764-7 https://www.jjj.de/fxt/fxtbook.pdf
-				// [2] Vlodymyr Myrnyy.A Simple and Efficient FFT Implementation in C++[J/OL].EETimes,2007.
-				// https://www.eetimes.com/a-simple-and-efficient-fft-implementation-in-c-part-i/
-				// [3] Chinese: RRRR_wys.离散哈特莱变换(DHT)及快速哈特莱变换(FHT)学习.博客园.2018.
-				// https://www.cnblogs.com/RRRR-wys/p/10090007.html
-				// template class of FHT, using template recursion to speed up code
-				template <size_t LEN, typename FloatTy>
-				struct FHT
-				{
-					enum
-					{
-						fht_len = LEN,
-						half_len = LEN / 2,
-						quater_len = LEN / 4,
-						log_len = hint_log2( fht_len )
-					};
-					using HalfFHT = FHT<half_len, FloatTy>;
-					static DynamicTable<FloatTy> TABLE;
-					
-					template <typename FloatIt>
-					// Decimation in time FHT
-					static void DecimationInTime( FloatIt in_out )
-					{
-						static_assert( std::is_same<typename std::iterator_traits<FloatIt>::value_type, FloatTy>::value, "Must be same as the FHT template float type" );
-						HalfFHT::DecimationInTime( in_out );
-						HalfFHT::DecimationInTime( in_out + half_len );
-
-						Transform_TwoPoint( in_out[ 0 ], in_out[ half_len ] );
-						Transform_TwoPoint( in_out[ quater_len ], in_out[ half_len + quater_len ] );
-
-						auto it0 = in_out + 1, it1 = in_out + half_len - 1;
-						auto it2 = in_out + half_len + 1, it3 = in_out + fht_len - 1;
-						auto omega_it = TABLE.get_it( 1 );
-						for ( ; it0 < it1; ++it0, --it1, ++it2, --it3, omega_it++ )
-						{
-							auto temp0 = it2[ 0 ], temp1 = it3[ 0 ];
-							auto omega = omega_it[ 0 ];
-							auto temp2 = temp0 * omega.real() + temp1 * omega.imag();
-							auto temp3 = temp0 * omega.imag() - temp1 * omega.real();
-							temp0 = it0[ 0 ], temp1 = it1[ 0 ];
-							it0[ 0 ] = temp0 + temp2;
-							it1[ 0 ] = temp1 + temp3;
-							it2[ 0 ] = temp0 - temp2;
-							it3[ 0 ] = temp1 - temp3;
-						}
-					}
-					// Decimation in frequency FHT
-					template <typename FloatIt>
-					static void DecimationInFrequency( FloatIt in_out )
-					{
-						static_assert( std::is_same<typename std::iterator_traits<FloatIt>::value_type, FloatTy>::value, "Must be same as the FHT template float type" );
-						Transform_TwoPoint( in_out[ 0 ], in_out[ half_len ] );
-						Transform_TwoPoint( in_out[ quater_len ], in_out[ half_len + quater_len ] );
-
-						auto it0 = in_out + 1, it1 = in_out + half_len - 1;
-						auto it2 = in_out + half_len + 1, it3 = in_out + fht_len - 1;
-						auto omega_it = TABLE.get_it( 1 );
-						for ( ; it0 < it1; ++it0, --it1, ++it2, --it3, omega_it++ )
-						{
-							auto temp0 = it0[ 0 ], temp1 = it1[ 0 ];
-							auto temp2 = it2[ 0 ], temp3 = it3[ 0 ];
-							it0[ 0 ] = temp0 + temp2;
-							it1[ 0 ] = temp1 + temp3;
-							temp0 = temp0 - temp2;
-							temp1 = temp1 - temp3;
-							auto omega = omega_it[ 0 ];
-							it2[ 0 ] = temp0 * omega.real() + temp1 * omega.imag();
-							it3[ 0 ] = temp0 * omega.imag() - temp1 * omega.real();
-						}
-
-						HalfFHT::DecimationInFrequency( in_out );
-						HalfFHT::DecimationInFrequency( in_out + half_len );
-					}
-				};
-				template <size_t LEN, typename FloatTy>
-				DynamicTable<FloatTy> FHT<LEN, FloatTy>::TABLE( FHT<LEN, FloatTy>::log_len, 1, true );
-
-				// Template specialization of short FHTs
-				template <typename FloatTy>
-				struct FHT<0, FloatTy>
-				{
-					template <typename FloatIt>
-					static void DecimationInTime( FloatIt in_out )
-					{
-					}
-					template <typename FloatIt>
-					static void DecimationInFrequency( FloatIt in_out )
-					{
-					}
-				};
-
-				template <typename FloatTy>
-				struct FHT<1, FloatTy>
-				{
-					template <typename FloatIt>
-					static void DecimationInTime( FloatIt in_out )
-					{
-					}
-					template <typename FloatIt>
-					static void DecimationInFrequency( FloatIt in_out )
-					{
-					}
-				};
-
-				template <typename FloatTy>
-				struct FHT<2, FloatTy>
-				{
-					template <typename FloatIt>
-					static void DecimationInTime( FloatIt in_out )
-					{
-						Transform_TwoPoint( in_out[ 0 ], in_out[ 1 ] );
-					}
-					template <typename FloatIt>
-					static void DecimationInFrequency( FloatIt in_out )
-					{
-						Transform_TwoPoint( in_out[ 0 ], in_out[ 1 ] );
-					}
-				};
-
-				template <typename FloatTy>
-				struct FHT<4, FloatTy>
-				{
-					template <typename FloatIt>
-					static void DecimationInTime( FloatIt in_out )
-					{
-						auto temp0 = in_out[ 0 ], temp1 = in_out[ 1 ];
-						auto temp2 = in_out[ 2 ], temp3 = in_out[ 3 ];
-						Transform_TwoPoint( temp0, temp1 );
-						Transform_TwoPoint( temp2, temp3 );
-						in_out[ 0 ] = temp0 + temp2;
-						in_out[ 1 ] = temp1 + temp3;
-						in_out[ 2 ] = temp0 - temp2;
-						in_out[ 3 ] = temp1 - temp3;
-					}
-					template <typename FloatIt>
-					static void DecimationInFrequency( FloatIt in_out )
-					{
-						auto temp0 = in_out[ 0 ], temp1 = in_out[ 1 ];
-						auto temp2 = in_out[ 2 ], temp3 = in_out[ 3 ];
-						Transform_TwoPoint( temp0, temp2 );
-						Transform_TwoPoint( temp1, temp3 );
-						in_out[ 0 ] = temp0 + temp1;
-						in_out[ 1 ] = temp0 - temp1;
-						in_out[ 2 ] = temp2 + temp3;
-						in_out[ 3 ] = temp2 - temp3;
-					}
-				};
-
-				template <typename FloatTy>
-				struct FHT<8, FloatTy>
-				{
-					template <typename FloatIt>
-					static void DecimationInTime( FloatIt in_out )
-					{
-						auto temp0 = in_out[ 0 ], temp1 = in_out[ 1 ];
-						auto temp2 = in_out[ 2 ], temp3 = in_out[ 3 ];
-						auto temp4 = in_out[ 4 ], temp5 = in_out[ 5 ];
-						auto temp6 = in_out[ 6 ], temp7 = in_out[ 7 ];
-						Transform_TwoPoint( temp0, temp1 );
-						Transform_TwoPoint( temp2, temp3 );
-						Transform_TwoPoint( temp4, temp5 );
-						Transform_TwoPoint( temp6, temp7 );
-						Transform_TwoPoint( temp0, temp2 );
-						Transform_TwoPoint( temp1, temp3 );
-						Transform_TwoPoint( temp4, temp6 );
-						Transform_TwoPoint( temp5, temp7 );
-
-						in_out[ 0 ] = temp0 + temp4;
-						in_out[ 2 ] = temp2 + temp6;
-						in_out[ 4 ] = temp0 - temp4;
-						in_out[ 6 ] = temp2 - temp6;
-						static constexpr decltype( temp0 ) SQRT_2_2 = 0.70710678118654757;
-						temp0 = ( temp5 + temp7 ) * SQRT_2_2;
-						temp2 = ( temp5 - temp7 ) * SQRT_2_2;
-						in_out[ 1 ] = temp1 + temp0;
-						in_out[ 3 ] = temp3 + temp2;
-						in_out[ 5 ] = temp1 - temp0;
-						in_out[ 7 ] = temp3 - temp2;
-					}
-					template <typename FloatIt>
-					static void DecimationInFrequency( FloatIt in_out )
-					{
-						auto temp0 = in_out[ 0 ], temp1 = in_out[ 1 ];
-						auto temp2 = in_out[ 2 ], temp3 = in_out[ 3 ];
-						auto temp4 = in_out[ 4 ], temp5 = in_out[ 5 ];
-						auto temp6 = in_out[ 6 ], temp7 = in_out[ 7 ];
-						Transform_TwoPoint( temp0, temp4 );
-						Transform_TwoPoint( temp1, temp5 );
-						Transform_TwoPoint( temp2, temp6 );
-						Transform_TwoPoint( temp3, temp7 );
-						Transform_TwoPoint( temp0, temp1 );
-						Transform_TwoPoint( temp2, temp3 );
-						in_out[ 0 ] = temp0 + temp2;
-						in_out[ 1 ] = temp1 + temp3;
-						in_out[ 2 ] = temp0 - temp2;
-						in_out[ 3 ] = temp1 - temp3;
-						static constexpr decltype( temp0 ) SQRT_2_2 = 0.70710678118654757;
-						temp0 = ( temp5 + temp7 ) * SQRT_2_2;
-						temp2 = ( temp5 - temp7 ) * SQRT_2_2;
-						Transform_TwoPoint( temp4, temp6 );
-						Transform_TwoPoint( temp0, temp2 );
-						in_out[ 4 ] = temp4 + temp0;
-						in_out[ 5 ] = temp4 - temp0;
-						in_out[ 6 ] = temp6 + temp2;
-						in_out[ 7 ] = temp6 - temp2;
-					}
-				};
-
-				// Function to help choose the correct template FHT dit function
-				template <size_t LEN = 1>
-				inline void fht_dit_template_alt( Float64* input, size_t fht_len )
-				{
-					if ( fht_len < LEN )
-					{
-						fht_dit_template_alt<LEN / 2>( input, fht_len );
-						return;
-					}
-					FHT<LEN, Float64>::DecimationInTime( input );
-				}
-				template <>
-				inline void fht_dit_template_alt<0>( Float64* input, size_t fht_len )
-				{
-				}
-
-				// Function to help choose the correct template FHT dif function
-				template <size_t LEN = 1>
-				inline void fht_dif_template_alt( Float64* input, size_t fht_len )
-				{
-					if ( fht_len < LEN )
-					{
-						fht_dif_template_alt<LEN / 2>( input, fht_len );
-						return;
-					}
-					FHT<LEN, Float64>::DecimationInFrequency( input );
-				}
-				template <>
-				inline void fht_dif_template_alt<0>( Float64* input, size_t fht_len )
-				{
-				}
-
-				inline auto fht_dit = fht_dit_template_alt<FHT_MAX_LEN>;
-				inline auto fht_dif = fht_dif_template_alt<FHT_MAX_LEN>;
-
-				// Use FHT to accelerate convolution of float64 array
-				inline void fht_convolution( Float64 fht_ary1[], Float64 fht_ary2[], Float64 out[], size_t fht_len )
-				{
-					if ( fht_len == 0 )
-					{
-						return;
-					}
-					if ( fht_len == 1 )
-					{
-						out[ 0 ] = fht_ary1[ 0 ] * fht_ary2[ 0 ];
-						return;
-					}
-					
-					fht_len = int_floor2( fht_len );
-					if ( fht_len > FHT_MAX_LEN )
-					{
-						std::cout << "FHT len cannot be larger than FHT_MAX_LEN" << std::endl;
-						throw("FHT len cannot be larger than FHT_MAX_LEN" );
-					}
-					fht_dif( fht_ary1, fht_len );
-					// When the two float arrays are actually same, execute DIF only once
-					if ( fht_ary1 != fht_ary2 )
-					{
-						fht_dif( fht_ary2, fht_len );
-					}
-					
-					const double inv = 0.5 / fht_len;
-					out[ 0 ] = fht_ary1[ 0 ] * fht_ary2[ 0 ] / fht_len;
-					out[ 1 ] = fht_ary1[ 1 ] * fht_ary2[ 1 ] / fht_len;
-					if ( fht_len == 2 )
-					{
-						return;
-					}
-					// Theory of convolution using FHT
-					auto temp0 = fht_ary1[ 2 ], temp1 = fht_ary1[ 3 ];
-					auto temp2 = fht_ary2[ 2 ], temp3 = fht_ary2[ 3 ];
-					Transform_TwoPoint( temp0, temp1 );
-					out[ 2 ] = ( temp2 * temp0 + temp3 * temp1 ) * inv;
-					out[ 3 ] = ( temp3 * temp0 - temp2 * temp1 ) * inv;
-					for ( size_t i = 4; i < fht_len; i *= 2 )
-					{
-						auto it0 = fht_ary1 + i, it1 = it0 + i - 1;
-						auto it2 = fht_ary2 + i, it3 = it2 + i - 1;
-						auto it4 = out + i, it5 = it4 + i - 1;
-						for ( ; it0 < it1; it0 += 2, it1 -= 2, it2 += 2, it3 -= 2, it4 += 2, it5 -= 2 )
-						{
-							temp0 = *it0, temp1 = *it1, temp2 = *it2, temp3 = *it3;
-							Transform_TwoPoint( temp0, temp1 );
-							*it4 = ( temp2 * temp0 + temp3 * temp1 ) * inv;
-							*it5 = ( temp3 * temp0 - temp2 * temp1 ) * inv;
-							temp0 = *( it1 - 1 ), temp1 = *( it0 + 1 ), temp2 = *( it3 - 1 ), temp3 = *( it2 + 1 );
-							Transform_TwoPoint( temp0, temp1 );
-							*( it5 - 1 ) = ( temp2 * temp0 + temp3 * temp1 ) * inv;
-							*( it4 + 1 ) = ( temp3 * temp0 - temp2 * temp1 ) * inv;
-						}
-					}
-					fht_dit( out, fht_len );
-				}
-			} // namespace hint_fht
-		} // namespace hint_transform
-
-		// FHT multiplication
-		template<typename UintTy>
-		void FHTMul( UintTy* out, const UintTy* in1, size_t in_len1, const UintTy* in2, size_t in_len2 )
-		{
-			// Use 16bit binary as an element
-			auto   out_16 = reinterpret_cast<uint16_t*>( out );
-			auto   in1_16 = reinterpret_cast<const uint16_t*>( in1 );
-			auto   in2_16 = reinterpret_cast<const uint16_t*>( in2 );
-			size_t in1_len16 = in_len1 * sizeof( UintTy ) / sizeof( uint16_t );
-			size_t in2_len16 = in_len2 * sizeof( UintTy ) / sizeof( uint16_t );
-			size_t out_len16 = in1_len16 + in2_len16, conv_len = out_len16 - 1, fht_len = int_ceil2( conv_len );
-
-			std::vector<Float64> buffer1( fht_len ), buffer2( fht_len );  // FHT bufffer
-			std::copy( in1_16, in1_16 + in1_len16, buffer1.data() );
-			std::copy( in2_16, in2_16 + in2_len16, buffer2.data() );
-
-			Transform::AlgorithmFHT::fht_convolution( buffer1.data(), buffer2.data(), buffer1.data(), fht_len );  // FHT convolution
-
-			uint64_t carry = 0;
-			for ( size_t i = 0; i < conv_len; i++ )
-			{
-				carry += uint64_t( buffer1[ i ] + 0.5 );
-				out_16[ i ] = carry & UINT16_MAX;
-				carry = carry >> 16;
-			}
-			out_16[ conv_len ] = carry & UINT16_MAX;
-		}
-
-		// FHT Square
-		template <typename UintTy>
-		void FHTSquare( UintTy* out, const UintTy* in, size_t in_len )
-		{
-			// Use 16bit binary as an element
-			auto   out_16 = reinterpret_cast<uint16_t*>( out );
-			auto   in_16 = reinterpret_cast<const uint16_t*>( in );
-			size_t in_len16 = in_len * sizeof( UintTy ) / sizeof( uint16_t );
-			size_t out_len16 = in_len16 * 2, conv_len = out_len16 - 1, fht_len = int_ceil2( conv_len );
-
-			std::vector<Float64> buffer( fht_len );	 // FHT bufffer
-			std::copy( in_16, in_16 + in_len16, buffer.data() );
-
-			Transform::AlgorithmFHT::fht_convolution( buffer.data(), buffer.data(), buffer.data(), fht_len );	// 卷积
-
-			uint64_t carry = 0;
-			for ( size_t i = 0; i < conv_len; i++ )
-			{
-				carry += uint64_t( buffer[ i ] + 0.5 );
-				out_16[ i ] = carry & UINT16_MAX;
-				carry = carry >> 16;
-			}
-			out_16[ conv_len ] = carry & UINT16_MAX;
-		}
+		// Add corresponding bitwise operation logic for other sizes of integer types as needed
 	}
 
 	class BigInteger
@@ -556,72 +109,56 @@ namespace TwilightDream::BigInteger
 
 		void Clean();
 
-		void BitLeftShiftCore( const uint32_t& shift );
-
-		void BitRightShiftCore( const uint32_t& shift );
-
-		BigInteger RightShiftBlock( size_t d ) const;
-
-		BigInteger LeftShiftBlock( size_t d ) const;
-
-		/**
-		* Computes the reciprocal of a BigInteger raised to a power n.
-		*
-		* This function calculates the reciprocal of a BigInteger raised to the power of n, which is
-		* equivalent to computing (BASE^n) / (*this), where BASE is the base of the BigInteger
-		* representation. The function uses a divide-and-conquer approach to efficiently
-		* compute the result, especially for large values of n.
-		*
-		* @param n The exponent to which the BigInteger should be raised.
-		* @return The reciprocal of (BASE^n) / (*this).
-		*/
-		BigInteger DivisionInvertReciprocal(size_t n) const;
-
 		std::vector<digit_type> values;
 
+		static constexpr uint32_t byte_bits = std::numeric_limits<unsigned char>::digits;
+
 	public:
-		int8_t sign = 1;
 
-		enum class ArithmeticMode : uint8_t
-		{
-			Addition = 0,
-			Subtraction = 1,
-			Multiplication = 2,
-			Division = 4
-		};
-
-		BigInteger() {}
+		BigInteger();
 
 		template <size_t N>
-		BigInteger(const std::bitset<N>& bits)
+		BigInteger( const std::bitset<N>& bits )
 		{
-			size_t digitCount = (N + EXPONENT - 1) / EXPONENT;
+			size_t digitCount = ( N + DIGIT_BITS - 1 ) / DIGIT_BITS;
 
-			values.resize(digitCount, 0);
+			values.resize( digitCount, 0 );
 
-			for (size_t i = 0; i < N; ++i)
+			for ( size_t i = 0; i < N; ++i )
 			{
-				if(i >= EXPONENT * values.size())
+				if ( i >= DIGIT_BITS * values.size() )
 				{
 					break;
 				}
 
-				if (bits.test(i))
+				if ( bits.test( i ) )
 				{
-					SetBit(i);
+					SetBit( i );
 				}
 			}
 		}
 
-		BigInteger( int64_t value );
+		BigInteger( uint64_t value );
 
 		explicit BigInteger( const std::string& number_string );
 
 		BigInteger( const std::string& number_string, uint32_t base );
 
-		BigInteger( const BigInteger& num );
+		BigInteger( const BigInteger& other ) noexcept;
 
-		BigInteger( BigInteger&& num ) noexcept;
+		BigInteger( BigInteger&& other ) noexcept;
+
+		void Print( uint32_t base_value ) const;
+
+		void PrintBinary(bool have_space_with_block = true) const;
+
+		BigInteger& operator=( const BigInteger& other ) noexcept;
+
+		BigInteger& operator=( BigInteger&& other ) noexcept;
+
+		BigInteger& AddMultiplyNumber( uint64_t add_num, uint64_t multiply_num );
+
+		uint64_t DividModuloNumber( uint64_t divisor );
 
 		BigInteger& operator+=( const BigInteger& other );
 
@@ -638,7 +175,7 @@ namespace TwilightDream::BigInteger
 
 		BigInteger& operator-=( const BigInteger& other );
 
-		BigInteger& Difference( const BigInteger& other );
+		BigInteger Difference( const BigInteger& other ) const;
 
 		/**
 		 * @brief Subtracts another BigInteger from the current instance.
@@ -659,160 +196,53 @@ namespace TwilightDream::BigInteger
 
 		BigInteger operator--( int );
 
-		BigInteger operator-() const;
+		BigInteger RightShiftBlock( size_t d ) const;
 
-		BigInteger operator+() const;
-
-		/**
-		 * @brief Performs base multiplication of two BigIntegers.
-		 *
-		 * This function multiplies the current instance by another BigInteger using
-		 * base multiplication and updates the current instance with the result.
-		 *
-		 * @param other The BigInteger to be multiplied.
-		 * @return Reference to the modified current instance after multiplication.
-		 */
-		BigInteger& BaseMultiplication( const BigInteger& other );
+		BigInteger LeftShiftBlock( size_t d ) const;
 
 		/**
-		 * @brief Performs FHT multiplication of two BigIntegers.
-		 *
-		 * This function multiplies the current instance by another BigInteger using
-		 * FHT algorithm and updates the current instance with the result.
-		 *
-		 * @param other The BigInteger to be multiplied.
-		 * @return Reference to the modified current instance after multiplication.
+		 * Computes the integer square root of the current BigInteger instance.
+		 * 
+		 * @return A reference to the current object, with its value updated to the integer square root of the original value.
+		 * 
+		 * @warning This function modifies the current BigInteger instance and returns a reference to itself. Any subsequent modifications to this reference will affect the original object. The computed square root is the largest integer less than or equal to the true square root.
 		 */
-		BigInteger& FHTMultiplication( const BigInteger& other );
-
-		/**
-		 * @brief Squares the current BigInteger by using FHT.
-		 *
-		 * This function squares the current instance by performing a FHT
-		 * algorithm and updates the current instance with the result.
-		 *
-		 * @return Reference to the modified current instance after squaring.
-		 */
-		BigInteger& FHTSquare();
-
-		/**
-		 * @brief Squares the current BigInteger.
-		 *
-		 * This function squares the current instance by performing a specialized
-		 * multiplication and updates the current instance with the result.
-		 *
-		 * @return Reference to the modified current instance after squaring.
-		 */
-		BigInteger& Square();
-
-		BigInteger& MultiplyBase( size_t times );
-
-		void SplitAt( const BigInteger& num, const size_t n, BigInteger& high, BigInteger& low );
-
-		/**
-		 * @brief Performs Karatsuba multiplication of two BigIntegers.
-		 *
-		 * This function multiplies the current instance by another BigInteger using
-		 * the Karatsuba algorithm, a divide-and-conquer approach for efficient
-		 * multiplication of large numbers. It updates the current instance with the result.
-		 *
-		 * @param other The BigInteger to be multiplied.
-		 * @return Reference to the modified current instance after multiplication.
-		 */
-		BigInteger& KaratsubaMultiplication( const BigInteger& other );
-
-		// result = result.Power(exponent)
-		BigInteger& Power( const size_t exponent );
-
-		// result = result.BigPower(exponent)
-		BigInteger& BigPower( const BigInteger& exponent );
-
 		BigInteger& Sqrt();
 
-		// a = a^{exponent} mod modulo
-		BigInteger& PowerWithModulo(const BigInteger& exponent, const BigInteger& modulo);
-
-		// this = this * other mod modulo
-		BigInteger& MultiplyWithModulo(const BigInteger& other, const BigInteger modulo);
-
-		//Use by MontgomeryReduce
-		BigInteger& MontDivR( size_t rsize );
-
-		//Use by MontgomeryReduce
-		BigInteger& MontModR( size_t rsize );
+		/**
+		 * Computes the integer cube root of the current BigInteger instance.
+		 * 
+		 * @return A reference to the current object, with its value updated to the integer cube root of the original value.
+		 * 
+		 * @warning This function modifies the current BigInteger instance and returns a reference to itself. Any subsequent modifications to this reference will affect the original object. The computed square root is the largest integer less than or equal to the true square root.
+		 */
+		BigInteger& Cbrt();
 
 		/**
-		 * @brief Montgomery reduction operation for modular arithmetic.
-		 *
-		 * This function performs Montgomery reduction for modular arithmetic.
-		 * It reduces the current instance modulo `m` using a precomputed value `mprime`
-		 * for optimization. The size of the Montgomery representation is specified by `rsize`.
-		 *
-		 * @param rsize The size of the Montgomery representation.
-		 * @param m The modulus for the reduction.
-		 * @param mprime The precomputed Montgomery constant.
-		 * @return Reference to the modified current instance after reduction.
+		 * Computes the modular exponentiation of the current BigInteger instance.
+		 * this = this^{exponent} mod modulo
+		 * 
+		 * @param exponent The exponent value as a BigInteger.
+		 * @param modulo The modulus value as a BigInteger.
+		 * @return A reference to the current object, with its value updated to the result of the modular exponentiation.
+		 * 
+		 * @warning This function modifies the current BigInteger instance and returns a reference to itself. Any subsequent modifications to this reference will affect the original object. Also, if the modulo is 1, the function sets the object to 0 and returns immediately.
 		 */
-		BigInteger& MontgomeryReduce( size_t rsize, const BigInteger& m, const BigInteger& mprime );
+		BigInteger& PowerWithModulo( const BigInteger& exponent, const BigInteger& modulo );
 
 		/**
-		 * @brief Montgomery exponentiation for modular arithmetic.
-		 *
-		 * This function performs Montgomery exponentiation, raising the current instance
-		 * to the power of `e` modulo `m`. It utilizes a precomputed Montgomery constant `mprime`
-		 * and a Montgomery representation of `r` for optimization. The size of the Montgomery
-		 * representation is specified by `rsize`.
-		 *
-		 * @param e The exponent.
-		 * @param m The modulus.
-		 * @param mprime The precomputed Montgomery constant.
-		 * @param r The Montgomery representation.
-		 * @param rsize The size of the Montgomery representation.
-		 * @return Reference to the modified current instance after exponentiation.
+		 * Performs modular multiplication of the current BigInteger instance with another BigInteger.
+		 * this = this * other mod modulo
+		 * 
+		 * @param other The BigInteger to multiply with.
+		 * @param modulo The modulus value as a BigInteger.
+		 * @return A reference to the current object, with its value updated to the result of the modular multiplication.
+		 * 
+		 * @warning This function modifies the current BigInteger instance and returns a reference to itself. Any subsequent modifications to this reference will affect the original object. If the modulo is 1, the function sets the object to 0 and returns immediately. This function uses a binary exponentiation algorithm, which is efficient for large numbers.
 		 */
-		BigInteger& MontgomeryPower( const BigInteger& e, const BigInteger& m, const BigInteger& mprime, const BigInteger r, const size_t rsize );
+		BigInteger& MultiplyWithModulo( const BigInteger& other, const BigInteger modulo );
 
-		/**
-		 * @brief Montgomery exponentiation for modular arithmetic.
-		 *
-		 * This function performs Montgomery exponentiation, raising the current instance
-		 * to the power of `e` modulo `m`. It computes the necessary Montgomery constants
-		 * `r`, `rinv`, and `mprime` before applying the exponentiation.
-		 *
-		 * @param e The exponent.
-		 * @param m The modulus.
-		 * @return Reference to the modified current instance after exponentiation.
-		 */
-		BigInteger& MontgomeryPower( const BigInteger& e, const BigInteger& m );
-
-		BigInteger& Divide( const BigInteger& other, BigInteger* r = nullptr );
-
-		/**
-		 * @brief Performs division using binary search based on bit chunks.
-		 *
-		 * This function implements a binary search division algorithm, which is an efficient
-		 * method for performing division on large integers. It iteratively calculates quotient
-		 * and remainder by considering bit chunks.
-		 *
-		 * @param other The divisor.
-		 * @return A pair containing the quotient and remainder after division.
-		 */
-		std::pair<BigInteger, BigInteger> BinarySearchDivision(const BigInteger& other);
-
-		BigInteger& ShortDivision( const BigInteger& other, BigInteger* r = nullptr );
-
-		/**
-		 * @brief Performs long division using Knuth's algorithm.
-		 *
-		 * This function divides the current instance by another BigInteger using
-		 * Donald Knuth's long division algorithm. The quotient is stored in the current
-		 * instance, and the remainder can be optionally stored in the provided pointer `r`.
-		 *
-		 * @param other The divisor.
-		 * @param r Pointer to store the remainder (can be nullptr if not needed).
-		 * @return Reference to the modified current instance after division.
-		 */
-		BigInteger& DonaldKnuthLongDivision( const BigInteger& other, BigInteger* r = nullptr );
+		BigInteger ReciprocalNewtonIteration( size_t bit, size_t offset = 0 ) const;
 
 		/**
 		* Performs division using Newton's iteration method for BigIntegers.
@@ -825,7 +255,7 @@ namespace TwilightDream::BigInteger
 		* @param divisor The BigInteger representing the divisor.
 		* @return A pair containing the quotient and the remainder after division.
 		*/
-		std::pair<BigInteger, BigInteger> NewtonIterationDivision(const BigInteger& divisor) const;
+		BigInteger DivideModuloNewtonIteration( const BigInteger& divisor, BigInteger& remainder ) const;
 
 		BigInteger& operator*=( const BigInteger& other );
 
@@ -843,11 +273,36 @@ namespace TwilightDream::BigInteger
 
 		size_t Size() const;
 
-		void CountLeadingZeros(size_t& result) const;
+		size_t CountLeadingZeros() const;
 
-		static uint16_t LeadingZeros( digit_type x );
+		size_t CountTrailingZeros() const;
 
-		size_t BitSize() const;
+		size_t BitLength() const;
+
+		// Block reference operator
+		digit_type& operator[](size_t index)
+		{
+			// Ensure the index is within bounds
+			if (index >= values.size())
+			{
+				throw std::out_of_range("Index out of range");
+			}
+			return values[index];
+		}
+
+		const digit_type& operator[](size_t index) const
+		{
+			// Ensure the index is within bounds
+			if (index >= values.size())
+			{
+				throw std::out_of_range("Index out of range");
+			}
+			return values[index];
+		}
+
+		void SetBlock( size_t block_position, uint64_t value );
+
+		digit_type GetBlock( size_t block_position ) const;
 
 		bool GetBit( size_t bit_position ) const;
 
@@ -855,19 +310,16 @@ namespace TwilightDream::BigInteger
 
 		void SetBit( bool value, size_t bit_position );
 
-		// Add 'count' number of bits with the specified value to the most significant end of the integer.
-		void BigInteger::ExtendedLeadingBits(size_t count, bool value);
+		std::byte GetByte( size_t byte_position ) const;
+
+		void SetByte( size_t byte_position, std::byte byte_in );
 
 		// Remove 'count' number of bits from the most significant end of the integer.
-		void BigInteger::SqueezeLeadingBits(size_t count);
+		void SqueezeLeadingBits( size_t count );
 
-		BigInteger& FromInt(uint64_t value);
-
-		int64_t ToInt() const;
+		void FromUnsignedInt(uint64_t value);
 
 		uint64_t ToUnsignedInt() const;
-
-		BigInteger& FromUnsignedInt(uint64_t value);
 
 		BigInteger operator&( const BigInteger& other ) const;
 
@@ -883,6 +335,38 @@ namespace TwilightDream::BigInteger
 
 		BigInteger& operator^=( const BigInteger& other );
 
+		/**
+		 * Computes the power of the current BigInteger instance.
+		 * result = result.Power(exponent)
+		 * 
+		 * @param exponent The exponent value, which must be a non-negative integer.
+		 * @return A reference to the current object, with its value updated to the result of the computation.
+		 * 
+		 * @warning Be aware that this function returns a reference to the current object, not a copy. Any modifications to the returned reference will affect the original BigInteger object.
+		 */
+		BigInteger& Power( const size_t exponent );
+
+		/**
+		 * Computes the power of the current BigInteger instance, where the exponent is also a BigInteger object.
+		 * result = result.BigPower(exponent)
+		 * 
+		 * @param exponent The exponent value, which must be a positive integer.
+		 * @return A reference to the current object, with its value updated to the result of the computation.
+		 * 
+		 * @warning Be aware that this function returns a reference to the current object, not a copy. Any modifications to the returned reference will affect the original BigInteger object.
+		 */
+		BigInteger& BigPower( const BigInteger& exponent );
+
+		BigInteger ModuloBasePower( size_t n ) const;
+
+		static BigInteger BasePowerN( size_t n );
+
+		static BigInteger TwoPowerN( size_t );
+
+		BigInteger LeftShiftBit( size_t shift ) const;
+
+		BigInteger RightShiftBit( size_t shift ) const;
+
 		BigInteger& operator<<=( const uint32_t shift );
 
 		BigInteger& operator>>=( const uint32_t shift );
@@ -890,60 +374,81 @@ namespace TwilightDream::BigInteger
 		friend BigInteger operator<<( const BigInteger& lhs, const uint32_t shift )
 		{
 			BigInteger result( lhs );
-			result <<= shift;
+			result = result.LeftShiftBit(shift);
 			return result;
 		}
 
 		friend BigInteger operator>>( const BigInteger& lhs, const uint32_t shift )
 		{
 			BigInteger result( lhs );
-			result >>= shift;
+			result = result.RightShiftBit(shift);
 			return result;
 		}
 
 		/**
-		 * @brief Performs a left rotation on the binary representation of the BigInteger.
+		 * @brief Rotates the bits of a BigInteger to the left by a specified number of positions.
 		 *
+		 * @param bits The BigInteger to be rotated.
 		 * @param shift The number of positions to rotate the bits to the left.
-		 * @param reference_bit_capacity The desired bit capacity for the resulting binary string.
-		 * @return copy to the modified BigInteger.
+		 * @param reference_bit_capacity The bit capacity to reference for the rotation (default is 0).
+		 * @return A new BigInteger that represents the result of the left bit rotation.
+		 *
+		 * This method performs a left bitwise rotation on the given BigInteger. The rotation
+		 * effectively shifts the bits to the left by the specified number of positions, with the bits
+		 * that overflow on the left being placed back on the right.
+		 * 
+		 * The rotation is performed with respect to a reference bit capacity:
+		 * - If the reference bit capacity is greater than or equal to the actual bit length of the input,
+		 *   the rotation is straightforward, and the leading bits are squeezed to fit the reference capacity.
+		 * - If the reference bit capacity is less than the actual bit length, the rotation is split into two
+		 *   parts: the part to be rotated and the steady part that remains unchanged. The rotated part is
+		 *   processed and combined with the steady part to form the final result.
+		 *
+		 * @example
+		 * BigInteger num("1001", 2); // Binary representation: 1001
+		 * BigInteger result = BigInteger::BitRotateLeft(num, 2, 4); // Result: 0110 (binary)
 		 */
-		static BigInteger BitRotateLeft(const BigInteger& bits, uint32_t shift, const uint32_t reference_bit_capacity);
+		static BigInteger BitRotateLeft( const BigInteger& bits, size_t shift, size_t reference_bit_capacity );
 
 		/**
-		 * @brief Performs a right rotation on the binary representation of the BigInteger.
+		 * @brief Rotates the bits of a BigInteger to the right by a specified number of positions.
 		 *
+		 * @param bits The BigInteger to be rotated.
 		 * @param shift The number of positions to rotate the bits to the right.
-		 * @param reference_bit_capacity The desired bit capacity for the resulting binary string.
-		 * @return copy to the modified BigInteger.
+		 * @param reference_bit_capacity The bit capacity to reference for the rotation (default is 0).
+		 * @return A new BigInteger that represents the result of the right bit rotation.
+		 *
+		 * This method performs a right bitwise rotation on the given BigInteger. The rotation
+		 * effectively shifts the bits to the right by the specified number of positions, with the bits
+		 * that overflow on the right being placed back on the left.
+		 * 
+		 * The rotation is performed with respect to a reference bit capacity:
+		 * - If the reference bit capacity is greater than or equal to the actual bit length of the input,
+		 *   the rotation is straightforward, and the leading bits are squeezed to fit the reference capacity.
+		 * - If the reference bit capacity is less than the actual bit length, the rotation is split into two
+		 *   parts: the part to be rotated and the steady part that remains unchanged. The rotated part is
+		 *   processed and combined with the steady part to form the final result.
+		 *
+		 * @example
+		 * BigInteger num("1001", 2); // Binary representation: 1001
+		 * BigInteger result = BigInteger::BitRotateRight(num, 2, 4); // Result: 0110 (binary)
 		 */
-		static BigInteger BitRotateRight(const BigInteger& bits, uint32_t shift, const uint32_t reference_bit_capacity);
-
-		digit_type& operator[]( const size_t index );
-
-		BigInteger& operator=( const BigInteger& other );
+		static BigInteger BitRotateRight( const BigInteger& bits, size_t shift, size_t reference_bit_capacity );
 
 		explicit operator bool()
 		{
-			return this->IsZero() ? false : true;
+			return !this->IsZero();
 		}
-
-		bool operator&&( const BigInteger& other ) const;
-
-		bool operator||( const BigInteger& other ) const;
-
-		bool operator!() const;
 
 		// Absolute value
 		BigInteger Abs() const;
 
+		/*
+		* Reference: https://lemire.me/blog/2024/04/13/greatest-common-divisor-the-extended-euclidean-algorithm-and-speed/
+		*/
 		static BigInteger GCD( BigInteger a, BigInteger b );
 
-		static void EGCD( const BigInteger& a, const BigInteger& b, BigInteger* gcd, BigInteger* co1, BigInteger* co2 );
-
 		static BigInteger LCM( const BigInteger& a, const BigInteger& b );
-
-		static BigInteger ModuloInverse( const BigInteger& a, const BigInteger& b );
 
 		/**
 		 * @brief Pollard's Rho algorithm for integer factorization.
@@ -953,11 +458,32 @@ namespace TwilightDream::BigInteger
 		 * factor is discovered.
 		 *
 		 * @param n The integer to factorize.
-		 * @return A non-trivial factor of `n` or -1 if none is found.
+		 * @return A non-trivial factor of `n`, or -1 if none is found.
 		 */
 		static BigInteger PollardRho( const BigInteger& n );
 
+		/**
+		 * @brief Baby-step Giant-step algorithm for computing discrete logarithms.
+		 *
+		 * This function uses the Baby-step Giant-step algorithm to solve the discrete
+		 * logarithm problem in a finite field. It takes a base `base`, a result `result`,
+		 * and a modulus `mod`, and returns the smallest non-negative integer `x` such that
+		 * `base^x ≡ result (mod mod)`. If no solution is found, it returns 0.
+		 *
+		 * @param base The base used for computing the discrete logarithm.
+		 * @param result The result of the discrete logarithm computation.
+		 * @param mod The modulus.
+		 * @return The smallest non-negative integer `x` such that `base^x ≡ result (mod mod)`,
+		 * or 0 if no solution is found.
+		 */
+		static BigInteger BabyStepGiantStep( const BigInteger& base, const BigInteger& result, const BigInteger& mod );
+
 		static BigInteger RandomGenerateNBit( size_t n );
+
+		friend void Swap(BigInteger& lhs, BigInteger& rhs)
+		{
+			lhs.values.swap(rhs.values);
+		}
 
 		/**
 		* Calculates the base-2 logarithm (log2) of a BigInteger using binary search.
@@ -967,47 +493,7 @@ namespace TwilightDream::BigInteger
 		*
 		* @return The value of log2(n) as an integer, or -1 if n is 0 or 1.
 		*/
-		BigInteger Log2() const;
-
-		/**
-		 * @brief Performs modular arithmetic operations on BigIntegers.
-		 *
-		 * This class provides static methods for performing modular arithmetic operations
-		 * on BigIntegers. The supported operations include addition, subtraction, multiplication,
-		 * and division. The modular operations are performed with respect to a given modulus.
-		 * The modulus can be any non-zero BigInteger, and specific optimizations are applied
-		 * when the modulus is a power of two.
-		 *
-		 * @note The division operation requires the modulus to be non-zero and, in the case of
-		 *       division, either the divisor must not be zero or the modulus must be a prime number.
-		 *
-		 * @param number The BigInteger on which the modulo operation is to be performed.
-		 * @param modulus The modulus with respect to which the modulo operation is performed.
-		 * @return The result of the modulo operation (number % modulus).
-		 */
-		static BigInteger Modulo(const BigInteger& number, const BigInteger& modulus);
-
-		/**
-		 * @brief Performs modular arithmetic operations on two BigIntegers.
-		 *
-		 * This method supports modular addition, subtraction, multiplication, and division of
-		 * two BigIntegers. The specific operation is determined by the `mode` parameter.
-		 *
-		 * @param mode The arithmetic mode specifying the operation to be performed
-		 *             (Addition, Subtraction, Multiplication, or Division).
-		 * @param a The first BigInteger operand.
-		 * @param b The second BigInteger operand.
-		 * @param modulus The modulus with respect to which the modular operation is performed.
-		 * @return The result of the specified modular arithmetic operation (a op b) % modulus.
-		 *
-		 * @throws std::invalid_argument If the modulus is zero or, in the case of division,
-		 *         the divisor is zero or the modulus is not prime.
-		 * @throws std::invalid_argument If the modular inverse for division cannot be found,
-		 *         ensuring (a * b) mod modulus != (a * inverse(b)) mod modulus.
-		 */
-		static BigInteger ModuloArithmetic(ArithmeticMode mode, const BigInteger& a , const BigInteger& b, const BigInteger& modulus);
-
-		std::string ToString() const;
+		size_t Log2() const;
 
 		/**
 		* Convert the BigInteger to a binary string representation.
@@ -1025,35 +511,120 @@ namespace TwilightDream::BigInteger
 		* @warning Binary base is unsupported in ToString function.
 		* @return String representation of the BigInteger in the specified base.
 		*/
-		std::string ToString( uint32_t base_value ) const;
+		std::string ToString( uint32_t base_value = 10 ) const;
 
 		void FromString( const std::string& number_string );
 
 		void FromString( const std::string& number_string, uint32_t base_value );
 
 		template <size_t N>
-		void BitsetData(std::bitset<N>& bits) const
+		void BitsetData( std::bitset<N>& bits ) const
 		{
 			bool bit = false;
 			for ( size_t i = 0; i < N; i++ )
 			{
-				if(i >= EXPONENT * values.size())
+				if ( i >= DIGIT_BITS * values.size() )
 				{
 					break;
 				}
 
-				bool bit = GetBit(i);
+				bool bit = GetBit( i );
 
-				if(bit)
+				if ( bit )
 				{
-					bits[i] = true;
+					bits[ i ] = true;
 				}
 			}
 		}
 
-		void Print( bool base10 ) const;
+		/**
+		 * @brief Convert the LittleEndian data in this->values to host byte order and export it to OutputData.
+		 * 
+		 * @param OutputData The vector to store the exported data.
+		 */
+		void ExportData( std::vector<std::byte>& OutputData, size_t length = 0, bool is_big_endian = false )
+		{
+			size_t bit_length = BitLength();
+			size_t bytes = ( bit_length + CHAR_BIT - 1 ) / CHAR_BIT;
+			if ( length == 0 )
+			{
+				length = bytes;
+			}
+			OutputData.clear();
+			OutputData.resize( length );
+			if ( IsZero() )
+			{
+				return;
+			}
+			size_t count = std::min( length, bytes );
+			for ( size_t i = 0; i < count; i++ )
+			{
+				OutputData[ i ] = GetByte( i );
+			}
+			if ( is_big_endian )
+			{
+				std::reverse( OutputData.begin(), OutputData.end() );
+			}
+		}
 
-		size_t SipHash(const BigInteger& Integer, std::vector<uint8_t>* keys = nullptr) const;
+		/**
+		 * @brief Convert host byte order data to this->values of the LittleEndian data and import from InData.
+		 * 
+		 * @param InData The vector containing the data to be imported.
+ 		 */
+		void ImportData( std::vector<std::byte> InData, bool is_big_endian = false )
+		{
+			if ( InData.empty() )
+			{
+				this->values.clear();
+				return;
+			}
+			if ( is_big_endian )
+			{
+				std::reverse( InData.begin(), InData.end() );
+			}
+			size_t bytes = InData.size();
+			size_t block_length = ( bytes + DIGIT_BYTES - 1 ) / DIGIT_BYTES;
+			this->values.resize( block_length );
+			for ( size_t i = 0; i < bytes; i++ )
+			{
+				this->SetByte( i, InData[ i ] );
+			}
+			Clean();
+		}
+
+		/**
+		 * @brief Convert the LittleEndian data in this->values to host byte order and export it to OutputData.
+		 * 
+		 * @param OutputData The vector to store the exported data.
+		 */
+		void ExportData( std::vector<uint8_t>& OutputData, size_t length = 0, bool is_big_endian = false )
+		{
+			std::vector<std::byte> output_byte;
+			ExportData( output_byte, length, is_big_endian );
+			OutputData.resize( output_byte.size() );
+			for ( size_t i = 0; i < output_byte.size(); i++ )
+			{
+				OutputData[ i ] = uint8_t( output_byte[ i ] );
+			}
+		}
+
+		/**
+		 * @brief Convert host byte order data to this->values of the LittleEndian data and import from InData.
+		 * 
+		 * @param InData The vector containing the data to be imported.
+ 		 */
+		void ImportData( std::vector<uint8_t> InData, bool is_big_endian = false )
+		{
+			std::vector<std::byte> input_byte( InData.size() );
+			for ( size_t i = 0; i < input_byte.size(); i++ )
+			{
+				input_byte[ i ] = std::byte { InData[ i ] };
+			}
+			ImportData( input_byte, is_big_endian );
+		}
+
+		size_t SipHash( const BigInteger& Integer, std::vector<uint8_t>* keys = nullptr ) const;
 
 		friend class HashFunction;
 
@@ -1092,20 +663,30 @@ namespace TwilightDream::BigInteger
 			return result;
 		}
 
+		friend int compare( const BigInteger& a, const BigInteger& b )
+		{
+			const size_t len_a = a.values.size();
+			const size_t len_b = b.values.size();
+
+			if ( len_a != len_b )
+			{
+				return len_a > len_b ? 1 : -1;
+			}
+			size_t i = len_a;
+			while ( i > 0 )
+			{
+				i--;
+				if ( a.values[ i ] != b.values[ i ] )
+				{
+					return a.values[ i ] > b.values[ i ] ? 1 : -1;
+				}
+			}
+			return 0;
+		}
+
 		friend bool operator==( const BigInteger& lhs, const BigInteger& rhs )
 		{
-			const size_t a = lhs.values.size();
-			const size_t b = rhs.values.size();
-
-			if ( a != b )
-				return false;
-			for ( size_t i = 0; i < a; ++i )
-			{
-				if ( lhs.values[ i ] != rhs.values[ i ] )
-					return false;
-			}
-
-			return true;
+			return compare( lhs, rhs ) == 0;
 		}
 
 		friend bool operator!=( const BigInteger& lhs, const BigInteger& rhs )
@@ -1115,73 +696,296 @@ namespace TwilightDream::BigInteger
 
 		friend bool operator>( const BigInteger& lhs, const BigInteger& rhs )
 		{
-			size_t a = lhs.values.size();
-			size_t b = rhs.values.size();
-
-			if ( a > b )
-				return true;
-			if ( b > a )
-				return false;
-			for ( size_t i = 0; i < a; ++i )
-			{
-				digit_type v1 = lhs.values[ a - ( i + 1 ) ];
-				digit_type v2 = rhs.values[ a - ( i + 1 ) ];
-				if ( v1 > v2 )
-					return true;
-				else if ( v1 < v2 )
-					return false;
-			}
-
-			return false;
+			return compare( lhs, rhs ) > 0;
 		}
 
 		friend bool operator>=( const BigInteger& lhs, const BigInteger& rhs )
 		{
-			if ( lhs > rhs || lhs == rhs )
-				return true;
-
-			return false;
+			return compare( lhs, rhs ) >= 0;
 		}
 
 		friend bool operator<( const BigInteger& lhs, const BigInteger& rhs )
 		{
-			size_t a = lhs.values.size();
-			size_t b = rhs.values.size();
-
-			if ( a < b )
-				return true;
-			if ( b < a )
-				return false;
-			for ( size_t i = 0; i < a; ++i )
-			{
-				digit_type v1 = lhs.values[ a - ( i + 1 ) ];
-				digit_type v2 = rhs.values[ a - ( i + 1 ) ];
-				if ( v1 < v2 )
-					return true;
-				else if ( v1 > v2 )
-					return false;
-			}
-
-			return false;
+			return compare( lhs, rhs ) < 0;
 		}
 
 		friend bool operator<=( const BigInteger& lhs, const BigInteger& rhs )
 		{
-			if ( lhs < rhs || lhs == rhs )
-				return true;
-
-			return false;
+			return compare( lhs, rhs ) <= 0;
 		}
 	};
-	
+
+	class BigSignedInteger
+	{
+	private:
+		friend struct TwilightDream::PrimeNumberTester;
+
+		BigInteger uint_data;
+		bool	   sign = false;  //MSB is true, then the number is negative
+
+	public:
+		enum class ArithmeticMode : uint8_t
+		{
+			Addition = 0,
+			Subtraction = 1,
+			Multiplication = 2,
+			Division = 4
+		};
+
+		BigSignedInteger();
+
+		BigSignedInteger( int64_t n );
+
+		BigSignedInteger( const BigSignedInteger& other ) noexcept;
+
+		BigSignedInteger( BigSignedInteger&& other ) noexcept;
+
+		BigSignedInteger( const BigInteger& other, bool new_sign = false );
+
+		BigSignedInteger( BigInteger&& other, bool new_sign = false );
+
+		explicit BigSignedInteger( const std::string& number_string );
+
+		BigSignedInteger( const std::string& number_string, uint32_t base );
+
+		operator BigInteger() const;
+
+		BigSignedInteger Abs();
+
+		bool IsZero() const;
+
+		bool IsNegative() const;
+
+		size_t Size() const;
+
+		size_t BitLength() const;
+
+		void Print(uint32_t base_value) const;
+
+		void PrintBinary(bool have_space_with_block = true) const;
+
+		/**
+		* Convert the BigInteger to a binary string representation.
+		*
+		* @param reference_bit_capacity The desired bit capacity of the resulting binary string.
+		* @param have_leading_zeros     Flag indicating whether to include leading zeros in the binary string.
+		* @return                       Binary string representation of the BigInteger.
+		*/
+		std::string ToBinaryString( const uint32_t reference_bit_capacity, bool have_leading_zeros = true ) const;
+
+		/**
+		* Convert the BigInteger to a string representation with the specified base.
+		*
+		* @param base_value The desired base for the string representation.
+		* @warning Binary base is unsupported in ToString function.
+		* @return String representation of the BigInteger in the specified base.
+		*/
+		std::string ToString( uint32_t base_value = 10 ) const;
+
+		void FromString( const std::string& number_string, bool new_sign = false );
+
+		void FromString( const std::string& number_string, uint32_t base_value, bool new_sign = false );
+
+		void FromUnsignedInt(uint64_t value);
+
+		uint64_t ToUnsignedInt() const;
+
+		void FromSignedInt(int64_t value);
+
+		int64_t ToSignedInt(bool is_negative) const;
+
+		void ExportData( bool& is_negative, std::vector<uint8_t>& OutputData, size_t length = 0, bool is_big_endian = false )
+		{
+			is_negative = sign;
+			uint_data.ExportData(OutputData, length, is_big_endian);
+		}
+
+		void ImportData( bool is_negative, std::vector<uint8_t> InData, bool is_big_endian = false )
+		{
+			sign = is_negative;
+			uint_data.ImportData(InData, is_big_endian);
+		}
+
+		BigSignedInteger operator-() const;
+
+		BigSignedInteger operator+() const;
+
+		friend BigSignedInteger operator+( const BigSignedInteger& lhs, const BigSignedInteger& rhs );
+
+		friend BigSignedInteger operator-( const BigSignedInteger& lhs, const BigSignedInteger& rhs );
+
+		friend BigSignedInteger operator*( const BigSignedInteger& lhs, const BigSignedInteger& rhs );
+
+		friend BigSignedInteger operator/( const BigSignedInteger& lhs, const BigSignedInteger& rhs );
+
+		friend BigSignedInteger operator%( const BigSignedInteger& lhs, const BigSignedInteger& rhs );
+
+		BigSignedInteger& operator=( const BigSignedInteger& other ) noexcept;
+
+		BigSignedInteger& operator=( BigSignedInteger&& other ) noexcept;
+
+		BigSignedInteger& operator+=( const BigSignedInteger& other );
+
+		BigSignedInteger& operator-=( const BigSignedInteger& other );
+
+		BigSignedInteger& operator*=( const BigSignedInteger& other );
+
+		BigSignedInteger& operator/=( const BigSignedInteger& other );
+
+		BigSignedInteger& operator%=( const BigSignedInteger& other );
+
+		BigSignedInteger operator&( const BigSignedInteger& other ) const;
+
+		BigSignedInteger& operator&=( const BigSignedInteger& other );
+
+		BigSignedInteger operator|( const BigSignedInteger& other ) const;
+
+		BigSignedInteger& operator|=( const BigSignedInteger& other );
+
+		BigSignedInteger operator~() const;
+
+		BigSignedInteger operator^( const BigSignedInteger& other ) const;
+
+		BigSignedInteger& operator^=( const BigSignedInteger& other );
+
+		BigSignedInteger& operator<<=( size_t shift );
+
+		BigSignedInteger& operator>>=( size_t shift );
+
+		friend BigSignedInteger operator<<( const BigSignedInteger& lhs, const uint32_t shift )
+		{
+			BigSignedInteger result( lhs );
+			result.uint_data = result.uint_data.LeftShiftBit(shift);
+			if(result.uint_data.IsZero())
+			{
+				result.sign = false;
+			}
+			return result;
+		}
+
+		friend BigSignedInteger operator>>( const BigSignedInteger& lhs, const uint32_t shift )
+		{
+			BigSignedInteger result( lhs );
+			result.uint_data = result.uint_data.RightShiftBit(shift);
+			if(result.uint_data.IsZero())
+			{
+				result.sign = false;
+			}
+			return result;
+		}
+
+		explicit operator bool()
+		{
+			return !this->IsZero();
+		}
+
+		friend bool operator==( const BigSignedInteger& lhs, const BigSignedInteger& rhs );
+
+		friend bool operator!=( const BigSignedInteger& lhs, const BigSignedInteger& rhs );
+
+		friend bool operator>( const BigSignedInteger& lhs, const BigSignedInteger& rhs );
+
+		friend bool operator>=( const BigSignedInteger& lhs, const BigSignedInteger& rhs );
+
+		friend bool operator<( const BigSignedInteger& lhs, const BigSignedInteger& rhs );
+
+		friend bool operator<=( const BigSignedInteger& lhs, const BigSignedInteger& rhs );
+
+		static void EGCD( BigSignedInteger a, BigSignedInteger b, BigSignedInteger& gcd, BigSignedInteger& co1, BigSignedInteger& co2 );
+
+		/**
+		 * @brief Performs modular arithmetic operations on two BigIntegers.
+		 *
+		 * This method supports modular addition, subtraction, multiplication, and division of
+		 * two BigIntegers. The specific operation is determined by the `mode` parameter.
+		 *
+		 * @param mode The arithmetic mode specifying the operation to be performed
+		 *             (Addition, Subtraction, Multiplication, or Division).
+		 * @param a The first BigInteger operand.
+		 * @param b The second BigInteger operand.
+		 * @param modulus The modulus with respect to which the modular operation is performed.
+		 * @return The result of the specified modular arithmetic operation (a op b) % modulus.
+		 *
+		 * @throws std::invalid_argument If the modulus is zero or, in the case of division,
+		 *         the divisor is zero or the modulus is not prime.
+		 * @throws std::invalid_argument If the modular inverse for division cannot be found,
+		 *         ensuring (a * b) mod modulus != (a * inverse(b)) mod modulus.
+		 */
+		static BigSignedInteger ModuloArithmetic( ArithmeticMode mode, const BigSignedInteger& a, const BigSignedInteger& b, const BigSignedInteger& modulus );
+
+		static BigSignedInteger ModuloInverse( const BigSignedInteger& a, const BigSignedInteger& b );
+
+		size_t SipHash( const BigSignedInteger& Integer, std::vector<uint8_t>* keys = nullptr ) const;
+	};
+
 	class HashFunction
 	{
 	public:
 		// 使用 lambda 表达式来调用自定义的 hash 方法
-		size_t operator()(const BigInteger& key) const
+		size_t operator()( const BigInteger& key ) const
 		{
-			return key.SipHash(key);
+			return key.SipHash( key );
+		}
+
+		// 使用 lambda 表达式来调用自定义的 hash 方法
+		size_t operator()( const BigSignedInteger& key ) const
+		{
+			return key.SipHash( key );
 		}
 	};
 
+	class Montgomery
+	{
+	private:
+		// Modulus
+		BigInteger modulo;
+		// Modulus * 2
+		BigInteger modulo2;
+		// Base (radix)
+		BigInteger radix;
+		BigInteger radix_square;
+		// Negative inverse of the modulus
+		BigInteger modulo_inverse_neg;
+		size_t	   radix_blocks;
+
+		BigInteger GetR() const;
+
+		BigInteger ModuloR( const BigInteger& a ) const;
+
+		BigInteger DivisionR( const BigInteger& a ) const;
+
+		BigInteger ReduceLazy( const BigInteger& a ) const;
+
+		BigInteger Reduce( const BigInteger& a ) const;
+
+	public:
+		Montgomery( const BigInteger& new_modulo );
+
+		BigInteger ToInt( const BigInteger& a ) const;
+
+		BigInteger ToMontgomery( const BigInteger& a ) const;
+
+		BigInteger Addtion( const BigInteger& a, const BigInteger& b ) const;
+
+		BigSignedInteger Addtion( const BigSignedInteger& a, const BigSignedInteger& b ) const;
+
+		BigInteger Substraction( const BigInteger& a, const BigInteger& b ) const;
+
+		BigSignedInteger Substraction( const BigSignedInteger& a, const BigSignedInteger& b ) const;
+
+		BigInteger Multiplication( const BigInteger& a, const BigInteger& b ) const;
+
+		BigSignedInteger Multiplication( const BigSignedInteger& a, const BigSignedInteger& b ) const;
+
+		BigInteger Inverse( const BigInteger& a ) const;
+
+		BigSignedInteger Inverse( const BigSignedInteger& a ) const;
+
+		BigInteger Power( BigInteger base, const BigInteger& index ) const;
+
+		BigSignedInteger Power( BigSignedInteger base, const BigInteger& index ) const;
+	};
+
 }  // namespace TwilightDream::BigInteger
+
+#endif

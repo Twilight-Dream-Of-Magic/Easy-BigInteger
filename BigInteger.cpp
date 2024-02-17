@@ -1,122 +1,65 @@
 #include "BigInteger.hpp"
+/*
+MIT License
+
+Copyright (c) 2024 Twilight-Dream & With-Sky
+
+https://github.com/Twilight-Dream-Of-Magic/
+https://github.com/With-Sky
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
+#include "BigInteger.hpp"
+#include "NewProject/hint_for_easy_bigint.hpp"
 
 namespace TwilightDream::BigInteger
 {
+	/*
+	
+	BigInteger Private
+	
+	*/
+
 	void BigInteger::Clean()
 	{
-		if ( IsZero() )
+		size_t length = values.size();
+		while ( length > 0 && values[ length - 1 ] == 0 )
 		{
-			values.resize( 1 );
-			values[ 0 ] = 0;
-			sign = 1;
+			length--;
 		}
-
-		size_t count = 0;
-		while ( ( values.size() - count ) > 1 && values[ values.size() - ( 1 + count ) ] == 0 )
-		{
-			count++;
-		}
-		if ( !count )
-		{
-			return;
-		}
-
-		values.erase( values.end() - count, values.end() );
-
-		if ( IsZero() )
-			sign = 1;
+		values.resize( length );
 	}
 
-	void BigInteger::BitLeftShiftCore( const uint32_t& shift )
+	/*
+	
+	BigInteger Public
+	
+	*/
+
+	BigInteger::BigInteger() {}
+
+	BigInteger::BigInteger( uint64_t value ) : values( 1, value )
 	{
-		uint64_t k, t;
-		k = 0;
-		for ( size_t i = 0; i < values.size(); ++i )
-		{
-			// Shift the current value to the right and store the carry
-			t = ( uint64_t )values[ i ] >> ( EXPONENT - shift );
-			// Shift the current value to the left and combine with the carry
-			// BASE is the maximum value that each element of the values array can represent, and is used here as a modulus to prevent overflow.
-			values[ i ] = ( ( ( uint64_t )values[ i ] << shift ) | k ) & ( BASE - 1 );
-			// Update the carry for the next iteration
-			k = t;
-			// If this is the last value and there is a carry, add a new value to the BigInteger
-			if ( i == values.size() - 1 && k != 0 )
-				values.push_back( 0 );
-		}
-	}
-
-	void BigInteger::BitRightShiftCore( const uint32_t& shift )
-	{
-		uint64_t k, t;
-		k = 0;
-		for ( int64_t i = values.size() - 1; i >= 0; --i )
-		{
-			// Shift the current value to the left and store the carry
-			t = ( uint64_t )values[ i ] << ( EXPONENT - shift );
-			// Shift the current value to the right and combine with the carry
-			// BASE is the maximum value that each element of the values array can represent, and is used here as a modulus to prevent overflow.
-			values[ i ] = ( ( values[ i ] >> shift ) | k ) & ( BASE - 1 );
-			// Update the carry for the next iteration
-			k = t;
-		}
-	}
-
-	BigInteger BigInteger::RightShiftBlock( size_t d ) const
-	{
-		if ( d >= Size() )
-			return 0;
-		BigInteger tmp;
-		tmp.values.assign( values.begin() + d, values.end() );	//shift d element, not bit
-		return tmp;
-	}
-
-	BigInteger BigInteger::LeftShiftBlock( size_t d ) const
-	{
-		if ( *this == 0 )
-			return 0;
-		BigInteger tmp;
-		tmp.values.resize( d );
-		tmp.values.insert( tmp.values.end(), values.begin(), values.end() );
-		return tmp;
-	}
-
-	BigInteger BigInteger::DivisionInvertReciprocal( size_t n ) const
-	{
-		// If the exponent is small enough, use the long division algorithm directly.
-		if ( std::min( Size(), n - Size() ) <= 64 )
-		{
-			BigInteger a;
-			a.values.resize( n + 1 );
-			a.values[ n ] = 1;
-			return a.DonaldKnuthLongDivision( *this );	// a / this
-		}
-
-		// Calculate the size of the dividend and the number of bits to shift.
-		size_t dividend_size = Size();
-		size_t k = ( n - dividend_size + 5 ) >> 1;				// k is the number of bits to shift for the divisor.
-		size_t k2 = k > dividend_size ? 0 : dividend_size - k;	// k2 is the number of bits to shift in the dividend.
-
-		// Shift the dividend to the right by k2 bits to prepare for division.
-		BigInteger shifted_dividend = RightShiftBlock( k2 );
-
-		// Calculate the size of the intermediate result.
-		size_t intermediate_size = k + shifted_dividend.Size();
-
-		// Recursively compute the reciprocal of the shifted dividend.
-		BigInteger reciprocal = shifted_dividend.DivisionInvertReciprocal( intermediate_size );
-
-		// Calculate the intermediate results for the division.
-		BigInteger doubled_reciprocal = reciprocal + reciprocal;
-		BigInteger numerator = ( *this ) * reciprocal * reciprocal;
-
-		// Compute the final reciprocal by adjusting for the shifts and intermediate calculations.
-		return doubled_reciprocal.LeftShiftBlock( n - intermediate_size - k2 ) - numerator.RightShiftBlock( 2 * ( intermediate_size + k2 ) - n ) - 1;
-	}
-
-	BigInteger::BigInteger( int64_t value )
-	{
-		FromInt( value );
+		//这个是有争议的，我们目前把它设置为数值"0"，而不是空比特容器的"0"
+		//This is controversial, we currently set it to the value "0" instead of "0" for an empty bit container.
+		//Clean();
 	}
 
 	BigInteger::BigInteger( const std::string& number_string )
@@ -129,53 +72,65 @@ namespace TwilightDream::BigInteger
 		FromString( number_string, base );
 	}
 
-	BigInteger::BigInteger( const BigInteger& num )
+	BigInteger::BigInteger( const BigInteger& other ) noexcept : values( other.values ) {}
+
+	BigInteger::BigInteger( BigInteger&& other ) noexcept : values( std::move( other.values ) ) {}
+
+	void BigInteger::Print( uint32_t base_value ) const
 	{
-		values = num.values;
-		sign = num.sign;
+		if ( base_value == 2 )
+		{
+			PrintBinary(false);
+		}
+		if ( base_value == 10 )
+		{
+			std::cout << ToString( 10 ) << "\n\n";
+		}
+		if ( base_value == 16 )
+		{
+			std::cout << ToString( 16 ) << "\n\n";
+		}
 	}
 
-	BigInteger::BigInteger( BigInteger&& num ) noexcept
+	void BigInteger::PrintBinary(bool have_space_with_block) const
 	{
-		values = std::move( num.values );
-		sign = num.sign;
+		if(!have_space_with_block)
+		{
+			std::cout << ToBinaryString( BitLength() ) << "\n\n";
+			return;
+		}
+
+		if ( IsZero() )
+		{
+			std::cout << "0";
+		}
+		size_t i = values.size();
+		while ( i > 0 )
+		{
+			i--;
+			std::cout << std::bitset<64>( values[ i ] ) << " ";
+		}
+		std::cout << "\n\n";
+	}
+
+	BigInteger& BigInteger::AddMultiplyNumber( uint64_t add_num, uint64_t multiply_num )
+	{
+		size_t len = values.size();
+		values.resize( len + 1 );
+		HyperInt::Arithmetic::abs_mul_add_num64( values.data(), len, values.data(), add_num, multiply_num );
+		Clean();
+		return *this;
+	}
+
+	uint64_t BigInteger::DividModuloNumber( uint64_t divisor )
+	{
+		uint64_t rem = HyperInt::Arithmetic::abs_div_rem_num64( values.data(), values.size(), values.data(), divisor );
+		Clean();
+		return rem;
 	}
 
 	BigInteger& BigInteger::operator+=( const BigInteger& other )
 	{
-		if ( this == &other )
-		{
-			BigInteger self( other );
-			*this += self;
-			return *this;
-		}
-
-		if ( this->IsZero() && other.sign == 1 )
-		{
-			*this = other;
-			return *this;
-		}
-		else if ( other.IsZero() )
-		{
-			return *this;
-		}
-
-		if ( sign != other.sign )
-		{
-			sign = ( sign > other.sign || *this < other ? 1 : -1 );
-			if ( *this >= other )
-			{
-				return Subtract( other );
-			}
-			else
-			{
-				BigInteger res = other;
-				res.Subtract( *this );
-				values = std::move( res.values );
-				return *this;
-			}
-		}
-
 		return Add( other );
 	}
 
@@ -184,19 +139,12 @@ namespace TwilightDream::BigInteger
 		// Determine the maximum size for the loop and result storage
 		const size_t this_size = values.size();
 		const size_t other_size = other.values.size();
-		const size_t max = ( this_size > other_size ? this_size : other_size ) + 1;
 
 		// Resize the storage for the result
-		values.resize( max );
+		values.resize( std::max( this_size, other_size ) + 1 );
 
 		// Initialize carry and perform addition
-		uint8_t carry = 0;
-		for ( size_t i = 0; i < max; ++i )
-		{
-			uint64_t sum = values[ i ] + ( ( i < other_size ) ? other.values[ i ] : 0 ) + carry;
-			values[ i ] = sum & ( BASE - 1 );  // Update current digit with the sum
-			carry = sum >> EXPONENT;		   // Update carry for the next iteration
-		}
+		HyperInt::Arithmetic::abs_add_binary( values.data(), this_size, other.values.data(), other_size, values.data() );
 
 		// Remove leading zeros and resize the storage
 		Clean();
@@ -207,58 +155,16 @@ namespace TwilightDream::BigInteger
 
 	BigInteger& BigInteger::operator-=( const BigInteger& other )
 	{
-		if ( this == &other )
-		{
-			BigInteger self( other );
-			*this -= self;
-			return *this;
-		}
-
-		if ( this->IsZero() && other.sign == -1 )
-		{
-			*this = other;
-			this->sign = 1;
-			return *this;
-		}
-		else if ( other.IsZero() )
-		{
-			return *this;
-		}
-
-		if ( sign == other.sign )
-		{
-			sign = ( *this > other ? 1 : -1 );
-			sign *= other.sign;
-
-			Difference( other );
-		}
-		else
-		{
-			Add( other );
-		}
-
-		return *this;
+		return Subtract( other );
 	}
 
-	BigInteger& BigInteger::Difference( const BigInteger& other )
+	BigInteger BigInteger::Difference( const BigInteger& other ) const
 	{
-		size_t	   max = values.size();
-		BigInteger a, b;
-		a.values = values;
-		b.values = other.values;
-
-		if ( b > a )
+		if ( *this > other )
 		{
-			max = other.values.size();
-			std::swap( a, b );
-			values.resize( max );
+			return *this - other;
 		}
-
-		a.Subtract( b );
-
-		values = std::move( a.values );
-
-		return *this;
+		return other - *this;
 	}
 
 	BigInteger& BigInteger::Subtract( const BigInteger& other )
@@ -267,17 +173,8 @@ namespace TwilightDream::BigInteger
 		const size_t this_size = values.size();
 		const size_t other_size = other.values.size();
 
-		// Initialize variables for borrow and temporary subtraction
-		int64_t borrow = 0;
-		int64_t temp;
-
 		// Perform subtraction for each digit
-		for ( size_t i = 0; i < this_size; ++i )
-		{
-			temp = values[ i ] - ( ( i >= other_size ) ? 0 : other.values[ i ] ) + borrow;
-			values[ i ] = temp & ( BASE - 1 );	// Update current digit with the result
-			borrow = temp >> EXPONENT;			// Update borrow for the next iteration
-		}
+		HyperInt::Arithmetic::abs_sub_binary( values.data(), this_size, other.values.data(), other_size, values.data() );
 
 		// Remove leading zeros and resize the storage
 		Clean();
@@ -312,241 +209,184 @@ namespace TwilightDream::BigInteger
 		return copy;
 	}
 
-	BigInteger BigInteger::operator-() const
+	//Return 2^{bits} / (*this * 2^{offset})
+	BigInteger BigInteger::ReciprocalNewtonIteration( size_t bits, size_t offset ) const
 	{
-		BigInteger copy = *this;
-		copy.sign = ( copy.sign == 1 ) ? -1 : 1;
-		return copy;
-	}
-
-	BigInteger BigInteger::operator+() const
-	{
-		BigInteger copy = *this;
-		copy.sign = ( copy.sign == 1 ) ? 1 : -1;
-		return copy;
-	}
-
-	BigInteger& BigInteger::BaseMultiplication( const BigInteger& other )
-	{
-		const size_t thisSize = values.size();
-		const size_t otherSize = other.values.size();
-		uint64_t	 carry, sum;
-		size_t		 i, j;
-
-		// Make a copy of the current instance's values
-		std::vector<digit_type> copy = std::move( values );
-
-		// Resize the storage for the result
-		values.resize( thisSize + otherSize );
-
-		// Perform base multiplication
-		for ( i = 0; i < otherSize; ++i )
+		size_t bits_n = BitLength();
+		if ( bits_n < 64 )
 		{
-			carry = 0;
-			for ( j = 0; j < thisSize; ++j )
+			if ( bits_n < offset + bits_n )
 			{
-				sum = values[ i + j ];
-				sum += carry;
-				sum += copy[ j ] * other.values[ i ];
-				values[ i + j ] = sum & ( BASE - 1 );  // Update current digit with the result
-				carry = sum >> EXPONENT;			   // Update carry for the next iteration
+				return 0;
 			}
-			values[ i + thisSize ] = carry;	 // Store the final carry in the next position
+			BigInteger dividend = TwoPowerN( bits - offset );
+			dividend.DividModuloNumber( values[ 0 ] );
+			return dividend;
 		}
-
-		// Remove leading zeros and resize the storage
-		Clean();
-
-		// Return a reference to the modified current instance
-		return *this;
-	}
-
-	BigInteger& BigInteger::FHTMultiplication( const BigInteger& other )
-	{
-		const size_t this_size = values.size();
-		const size_t other_size = other.values.size();
-
-		// Make a copy of the current instance's values
-		std::vector<FHT_BITS_TYPE> copy1( values.begin(), values.end() );
-		std::vector<FHT_BITS_TYPE> copy2( other.values.begin(), other.values.end() );
-		std::vector<FHT_BITS_TYPE> result( this_size + other_size );
-
-		// Use FHT to accelerate multiplication
-		HyperIntegerFunctions::FHTMul( result.data(), copy1.data(), copy1.size(), copy2.data(), copy2.size() );
-
-		values = std::vector<digit_type>( result.begin(), result.end() );
-		// Remove leading zeros and resize the storage
-		Clean();
-
-		// Return a reference to the modified current instance
-		return *this;
-	}
-
-	BigInteger& BigInteger::FHTSquare()
-	{
-		size_t					   t = values.size();
-		std::vector<FHT_BITS_TYPE> copy( values.begin(), values.end() );
-		std::vector<FHT_BITS_TYPE> result( t * 2 );
-
-		// Perform FHT algorithm for squaring
-		HyperIntegerFunctions::FHTSquare( result.data(), copy.data(), t );
-
-		values = std::vector<digit_type>( result.begin(), result.end() );
-		Clean();
-		return *this;
-	}
-
-	BigInteger& TwilightDream::BigInteger::BigInteger::Square()
-	{
-		std::vector<digit_type> result;
-
-		/*
-				uv: Represents the sum of a product in the algorithm, essentially the temporary value before splitting into two parts (v and u).
-				c: Represents the carry from the product calculations.
-				v: Represents the lower part of the temporary value (uv % BASE).
-				u: Represents the upper part of the temporary value ((uv - v) / BASE).
-			*/
-		uint64_t uv, c, v, u;
-		size_t	 t = values.size();
-		result.resize( t * 2 );
-
-		// Perform specialized multiplication for squaring
-		for ( size_t i = 0; i < t; ++i )
+		if ( bits > ( bits_n + offset ) * 2 )
 		{
-			// Compute square and initialize variables
-			uv = result[ 2 * i ] + values[ i ] * values[ i ];
-			v = uv % BASE;
-			u = ( uv - v ) / BASE;
-			result[ 2 * i ] = v;
-			c = u;
-
-			// Compute cross products and update result
-			for ( size_t j = i + 1; j < t; ++j )
-			{
-				uv = result[ i + j ] + 2 * values[ j ] * values[ i ] + c;
-				v = uv % BASE;
-				u = ( uv - v ) / BASE;
-				result[ i + j ] = v;
-				c = u;
-			}
-			result[ i + t ] = u;
+			offset = bits - ( bits_n + offset ) * 2;
+			return ReciprocalNewtonIteration( bits + offset, offset );
 		}
-
-		values = std::move( result );
-		Clean();
-		return *this;
-	}
-
-	BigInteger& BigInteger::MultiplyBase( size_t times )
-	{
-		values.insert( values.begin(), times, 0 );
-		return *this;
-	}
-
-	void BigInteger::SplitAt( const BigInteger& num, const size_t n, BigInteger& high, BigInteger& low )
-	{
-		std::vector<digit_type> lowValue( num.values.begin(), num.values.begin() + n );
-		std::vector<digit_type> highValue( num.values.end() - ( num.values.size() - n ), num.values.end() );
-
-		low.values = std::move( lowValue );
-		high.values = std::move( highValue );
-	}
-
-	BigInteger& TwilightDream::BigInteger::BigInteger::KaratsubaMultiplication( const BigInteger& other )
-	{
-		// Determine the size for splitting and create temporary BigIntegers
-		const size_t m = ( values.size() < other.values.size() ? values.size() : other.values.size() );
-		const size_t m2 = m >> 1;
-		BigInteger	 high1, low1, high2, low2;
-		BigInteger	 z0, z1, z2;
-
-		// Split the BigIntegers into high and low parts
-		SplitAt( *this, m2, high1, low1 );
-		SplitAt( other, m2, high2, low2 );
-
-		static bool workerId0, workerId1, workerId2;
-
-		// Perform Karatsuba multiplication
-		if ( !MULTI_THREAD || m < MULTI_THREAD_LIMIT || ( workerId0 || workerId1 || workerId2 ) )
+		size_t bits_n0 = ( bits_n + offset ) / 2 + 1;
+		size_t bits0 = bits_n0 * 2, shift = 0, offset0 = 0;
+		if ( bits_n0 > bits_n )
 		{
-			z0 = low1 * low2;
-			z1 = ( low1 + high1 ) * ( low2 + high2 );
-			z2 = high1 * high2;
+			offset0 = bits_n0 - bits_n;
 		}
 		else
 		{
-			// Use multi-threading for parallel computation
-			workerId0 = true;
-			workerId1 = true;
-			workerId2 = true;
-
-			auto lambda0 = [ & ] {
-				z0 = low1 * low2;
-				workerId0 = false;
-			};
-			auto lambda1 = [ & ] {
-				z1 = ( low1 + high1 ) * ( low2 + high2 );
-				workerId1 = false;
-			};
-			auto lambda2 = [ & ] {
-				z2 = high1 * high2;
-				workerId2 = false;
-			};
-
-			std::thread worker0( lambda0 );
-			std::thread worker1( lambda1 );
-			std::thread worker2( lambda2 );
-
-			worker1.join();
-			worker0.join();
-			worker2.join();
+			shift = bits_n - bits_n0;
 		}
+		BigInteger x0 = *this >> shift;
+		x0 = x0.ReciprocalNewtonIteration( bits0, offset0 );
+		BigInteger square = x0 * x0;
+		square *= ( *this );
+		bits0 = bits0 - offset0 + shift;
+		bits = bits - offset;
+		x0 = x0 << ( bits0 + 1 );
+		x0 -= square;
+		return x0 >> ( bits0 * 2 - bits );
+	}
 
-		// Combine the partial results
-		z1.Subtract( z2 );
-		z1.Subtract( z0 );
-		z2.MultiplyBase( m2 << 1 );
-		z1.MultiplyBase( m2 );
-		z2.Add( z1 );
-		z2.Add( z0 );
+	//Return *this / divisor
+	BigInteger BigInteger::DivideModuloNewtonIteration( const BigInteger& divisor, BigInteger& remainder ) const
+	{
+		if ( divisor.IsZero() )
+		{
+			throw std::overflow_error( "Divide by zero" );
+		}
+		if ( *this < divisor )
+		{
+			remainder = *this;
+			return 0;
+		}
+		size_t	   bits_a = this->BitLength();
+		size_t	   bits_b = divisor.BitLength();
+		BigInteger quotient;
+		if ( divisor.Size() == 1 )
+		{
+			quotient = *this;
+			remainder = quotient.DividModuloNumber( divisor.values[ 0 ] );
+			return quotient;
+		}
+		size_t shift = 0;
+		if ( bits_b * 2 > bits_a )
+		{
+			shift = bits_b * 2 - bits_a;
+			shift = std::min( shift, bits_b - 1 );
+		}
+		size_t	   bits = bits_a - shift + 1;
+		BigInteger inv = ( divisor >> shift ).ReciprocalNewtonIteration( bits );
+		quotient = ( ( *this >> shift ) * inv ) >> bits;
+		BigInteger product = quotient * divisor;
+		while ( product > *this )
+		{
+			quotient -= 1;
+			product -= divisor;
+		}
+		remainder = *this - product;
+		while ( remainder >= divisor )
+		{
+			quotient += 1;
+			remainder -= divisor;
+		}
+		return quotient;
+	}
 
-		// Update the current instance with the result
-		values = std::move( z2.values );
-
+	BigInteger& BigInteger::operator*=( const BigInteger& other )
+	{
+		if ( this->IsZero() || other.IsZero() )
+		{
+			return *this = 0;
+		}
+		size_t this_len = values.size();
+		size_t other_len = other.values.size();
+		if ( other_len == 1 )
+		{
+			return AddMultiplyNumber( 0, other.values[ 0 ] );
+		}
+		values.resize( this_len + other_len );
+		HyperInt::Arithmetic::multiplier( values.data(), this_len, other.values.data(), other_len, values.data() );
+		Clean();
 		return *this;
 	}
 
-	BigInteger& BigInteger::Power( const size_t exponent )
+	BigInteger& BigInteger::operator/=( const BigInteger& other )
 	{
+		if ( this == &other )
+		{
+			*this = 1;
+			return *this;
+		}
+		if ( other.Size() == 1 )
+		{
+			this->DividModuloNumber( other.values[ 0 ] );
+			return *this;
+		}
+		BigInteger r;
+		*this = DivideModuloNewtonIteration( other, r );
+		return *this;
+	}
+
+	BigInteger& BigInteger::operator%=( const BigInteger& other )
+	{
+		if ( this == &other )
+		{
+			*this = 0;
+			return *this;
+		}
+		if ( other.Size() == 1 )
+		{
+			uint64_t remainder = this->DividModuloNumber( other.values[ 0 ] );
+			return *this = remainder;
+		}
+		BigInteger r;
+		DivideModuloNewtonIteration( other, r );
+		return *this = r;
+	}
+
+	BigInteger& BigInteger::Power( size_t exponent )
+	{
+		BigInteger result = 1;
+		BigInteger base = *this;
+
 		if ( exponent == 0 )
 		{
 			*this = 1;
 			return *this;
 		}
 
-		BigInteger result( *this );
-		for ( size_t i = 0; i < exponent - 1; ++i )
+		while ( true )
 		{
-			result *= *this;
+			if ( exponent & 1 )
+			{
+				result *= base;
+			}
+			if ( exponent == 0 )
+			{
+				break;
+			}
+			base *= base;
+			exponent >>= 1;
 		}
-		*this = result;
+
+		values = std::move( result.values );
 		return *this;
 	}
 
 	BigInteger& BigInteger::BigPower( const BigInteger& exponent )
 	{
-		const BigInteger ZERO = 0;
-		const BigInteger ONE = 1;
-		BigInteger		 result = ONE;
-		BigInteger		 base = *this;
+		BigInteger result = 1;
+		BigInteger base = *this;
 
-		if ( exponent == ZERO )
+		if ( exponent.IsZero() )
 		{
 			*this = 1;
 			return *this;
 		}
 
-		size_t index_bits = exponent.BitSize();
+		size_t index_bits = exponent.BitLength();
 		for ( size_t i = 0; i < index_bits; i++ )
 		{
 			if ( exponent.GetBit( i ) )
@@ -554,567 +394,62 @@ namespace TwilightDream::BigInteger
 				result *= base;
 			}
 
-			base.Power( 2 );
+			base *= base;
 		}
 
 		values = std::move( result.values );
 		return *this;
 	}
 
-	BigInteger& BigInteger::MontDivR( size_t rsize )
+	BigInteger BigInteger::ModuloBasePower( size_t n ) const
 	{
-		if ( values.size() > rsize )
+		if ( n >= Size() )
 		{
-			values.erase( values.begin(), values.begin() + rsize );
-		}
-		else
-		{
-			*this = 0;
-		}
-		return *this;
-	}
-
-	BigInteger& BigInteger::MontModR( size_t rsize )
-	{
-		if ( values.size() > rsize )
-		{
-			values.erase( values.end() - ( values.size() - rsize ), values.end() );
-		}
-		return *this;
-	}
-
-	BigInteger& BigInteger::MontgomeryReduce( size_t rsize, const BigInteger& m, const BigInteger& mprime )
-	{
-		// Perform Montgomery reduction steps
-		BigInteger n = *this;
-		n.MontModR( rsize );
-
-		n *= mprime;
-		n.MontModR( rsize );
-
-		n *= m;
-
-		Add( n );
-		MontDivR( rsize );
-
-		// Subtract m if the result is greater than or equal to m
-		if ( *this >= m )
-		{
-			*this -= m;
-		}
-
-		return *this;
-	}
-
-	BigInteger& BigInteger::MontgomeryPower( const BigInteger& e, const BigInteger& m, const BigInteger& mprime, const BigInteger r, const size_t rsize )
-	{
-		// Initialize precomputed powers of the base
-		const uint8_t			k = ( e.BitSize() < 512 ? 4 : 5 );
-		std::vector<BigInteger> g( ( uint64_t )1 << k );
-
-		g[ 0 ] = *this * ( ( r * r ) % m );
-		g[ 0 ].MontgomeryReduce( rsize, m, mprime );
-		BigInteger g2 = g[ 0 ];
-
-		g2 = g2 * g2;
-		g2.MontgomeryReduce( rsize, m, mprime );
-
-		for ( size_t i = 1; i < g.size(); ++i )
-		{
-			g[ i ] = g[ i - 1 ];
-			g[ i ] *= g2;
-			g[ i ].MontgomeryReduce( rsize, m, mprime );
-		}
-
-		// Perform Montgomery exponentiation
-		size_t	   bitSize = e.BitSize();
-		BigInteger result = r % m;
-		int64_t	   i = bitSize - 1;
-
-		while ( i >= 0 )
-		{
-			if ( e.GetBit( i ) )
-			{
-				uint64_t l = ( i - k + 1 > 0 ? i - k + 1 : 0 );
-				while ( !e.GetBit( l ) )
-				{
-					l++;
-				}
-
-				for ( size_t j = 0; j < i - l + 1; ++j )
-				{
-					result *= result;
-					result.MontgomeryReduce( rsize, m, mprime );
-				}
-
-				uint64_t ndx = 0;
-				for ( int64_t j = i; j >= l; --j )
-				{
-					if ( j < 0 )
-					{
-						break;
-					}
-					ndx <<= 1;
-					if ( e.GetBit( j ) )
-					{
-						ndx++;
-					}
-				}
-				ndx >>= 1;
-				result *= g[ ndx ];
-				result.MontgomeryReduce( rsize, m, mprime );
-				i = l - 1;
-			}
-			else
-			{
-				result *= result;
-				result.MontgomeryReduce( rsize, m, mprime );
-				i--;
-			}
-		}
-
-		// Finalize and update the current instance with the result
-		result.MontgomeryReduce( rsize, m, mprime );
-		values = std::move( result.values );
-
-		return *this;
-	}
-
-	BigInteger& BigInteger::MontgomeryPower( const BigInteger& e, const BigInteger& m )
-	{
-		// Determine the size of the Montgomery representation
-		size_t rsize = m.values.size();
-
-		// Initialize Montgomery constants
-		BigInteger r, rinv = 1, mprime = 0;
-		mprime.values.resize( m.values.size() );
-		r.values.resize( rsize > 1 ? rsize : 2 );
-		r.values[ 1 ] = 1;
-
-		// Set up Montgomery constants
-		for ( size_t i = 0; i < rsize - 1; ++i )
-		{
-			r <<= EXPONENT;
-		}
-
-		for ( size_t i = 0; i < rsize * EXPONENT; ++i )
-		{
-			if ( ( rinv[ 0 ] & 1 ) == 0 )
-			{
-				rinv >>= 1;
-				mprime >>= 1;
-			}
-			else
-			{
-				rinv.Add( m );
-				rinv >>= 1;
-				if ( i != 0 )
-					mprime >>= 1;
-				mprime.SetBit( rsize * EXPONENT - 1 );
-			}
-		}
-
-		// Perform Montgomery exponentiation using precomputed constants
-		MontgomeryPower( e, m, mprime, r, rsize );
-
-		// Return a reference to the modified current instance
-		return *this;
-	}
-
-	BigInteger& BigInteger::Divide( const BigInteger& other, BigInteger* r )
-	{
-		// Handle special case when the numerator is zero
-		if ( values.size() == 1 && values[ 0 ] == 0 )
-		{
-			if ( r != nullptr )
-			{
-				// Return 0 with positive sign if the numerator is zero
-				r->sign = 1;
-				r->values.resize( 1 );
-				r->values[ 0 ] = 0;
-			}
 			return *this;
 		}
-
-		/*
-				BinarySearch <= Short <= DonaldKnuthLong <= NewtonIteration
-			*/
-
-		// Select division algorithm based on the size of the divisor
-		if ( other.values.size() < BINARY_SEARCH_DIVISION_LIMIT )
-		{
-			// Use BinarySearchDivision for large divisors
-			auto pair = BinarySearchDivision( other );
-			if ( r != nullptr )
-			{
-				// Store the remainder in the provided pointer
-				*r = pair.second;
-			}
-			*this = pair.first;	 // Update the current instance with the quotient
-			return *this;
-		}
-		else if ( other.values.size() < SHORT_DIVISION_LIMIT )
-		{
-			//There are special cases where the computation fails using short division.
-			if ( other.values[ 0 ] == 0 )
-			{
-				DonaldKnuthLongDivision( other, r );
-				return *this;
-			}
-			// Use ShortDivision for small divisors
-			return ShortDivision( other, r );
-		}
-		else if ( other.values.size() < DONALD_KNUTH_LONG_DIVISION_LIMIT )
-		{
-			// Use DonaldKnuthLongDivision for intermediate-sized divisors
-			DonaldKnuthLongDivision( other, r );
-			return *this;
-		}
-		else
-		{
-			// Use Newton iteration for long-sized divisors
-			BigInteger copy( *this );
-			auto	   pair = copy.NewtonIterationDivision( other );
-			if ( r != nullptr )
-			{
-				*r = pair.second;
-			}
-			return *this = pair.first;
-		}
+		BigInteger result;
+		result.values.assign( values.begin(), values.begin() + n );
+		return result;
 	}
 
-	std::pair<BigInteger, BigInteger> BigInteger::BinarySearchDivision( const BigInteger& other )
+	// Return BASE^{n}
+	// BASE = 2 ^{64} (65 Bit)
+	BigInteger BigInteger::BasePowerN( size_t n )
 	{
-		// Make copies of the numerator and denominator
-		BigInteger		 A = *this;
-		BigInteger		 B = other;
-		BigInteger		 Quotient = 0;
-		BigInteger		 Remainder = 0;
-		const BigInteger Zero = 0;
-
-		// Lambda function for the main division logic
-		auto RunFunction = [ &Zero ]( BigInteger& Remainder, const BigInteger& Divisor ) {
-			digit_type QuotientDigit = 0;
-
-			//Multiplier for Reference Remainder
-			BigInteger From = 0;
-			//Reference Remainder
-			BigInteger&& ToSubtract = std::move( Remainder );
-
-			//Copy Divisor
-			BigInteger ToAddition = Divisor;
-			// Left shift ToAddition by (EXPONENT - 1) to prepare for binary search
-			ToAddition <<= EXPONENT - 1;
-
-			// Binary search loop
-			for ( digit_type index = digit_type( 1 ) << ( EXPONENT - 1 ); index > 0; index >>= 1 )
-			{
-				if ( From + ToAddition <= Remainder )
-				{
-					From += ToAddition;
-					QuotientDigit += index;
-
-					// Check for potential overflow
-					if ( QuotientDigit >= BASE )
-						throw std::runtime_error( "Overflow detected in division!" );
-
-					// Note: The original code throws an exception if QuotientDigit >= BASE,
-					// which is reasonable to catch unexpected behavior during debugging.
-				}
-				ToAddition >>= 1;
-			}
-
-			// Update Remainder and return QuotientDigit
-			ToSubtract -= From;
-			return QuotientDigit;
-		};
-
-		// Main loop for calculating quotient and remainder (Binary search division based on bit chunk)
-		for ( auto iter = A.values.rbegin(); iter != A.values.rend(); ++iter )
-		{
-			digit_type RemainderDigit = *iter;
-
-			// Insert RemainderDigit to the front of Remainder's values
-			if ( RemainderDigit != 0 )
-			{
-				if ( Remainder.IsZero() )
-				{
-					Remainder.values[ 0 ] = RemainderDigit;
-				}
-				else
-				{
-					Remainder.values.insert( Remainder.values.begin(), RemainderDigit );
-				}
-			}
-
-			// Calculate QuotientDigit using the RunFunction based on binary search
-			digit_type QuotientDigit = ( B <= Remainder ) ? RunFunction( Remainder, B ) : 0;
-
-			if ( Quotient.IsZero() )
-			{
-				Quotient.values[ 0 ] = QuotientDigit;
-			}
-			else
-			{
-				// Insert QuotientDigit to the front of Quotient's values
-				Quotient.values.insert( Quotient.values.begin(), QuotientDigit );
-			}
-		}
-
-		// Return the result as a pair of Quotient and Remainder
-		return std::pair<BigInteger, BigInteger>( Quotient, Remainder );
+		BigInteger result;
+		result.values.resize( n + 1, 0 );
+		result.values[ n ] = 1;
+		return result;
 	}
 
-	BigInteger& BigInteger::ShortDivision( const BigInteger& other, BigInteger* r )
+	// Return 2^{n}
+	BigInteger BigInteger::TwoPowerN( size_t n )
 	{
-		if ( *this < other )
-		{
-			if ( r != nullptr )
-			{
-				r->values = std::move( values );
-			}
-			else
-			{
-				*this = 0;
-			}
-
-			return *this;
-		}
-
-		size_t	 n = values.size();
-		uint64_t d = other.values[ 0 ];
-
-		std::vector<digit_type> q( n );
-		uint64_t				t, k = 0;
-
-		for ( int64_t i = n - 1; i >= 0; --i )
-		{
-			if ( values[ i ] + k >= d )
-			{
-				t = values[ i ] + k;
-				q[ i ] = t / d;
-				k = uint64_t( t % d ) << EXPONENT;
-			}
-			else
-			{
-				k = uint64_t( values[ i ] % d ) << EXPONENT;
-			}
-		}
-		if ( r != nullptr )
-		{
-			*r = k >> EXPONENT;
-		}
-
-		values = std::move( q );
-
-		Clean();
-		return *this;
+		size_t	   bits = n + 1;
+		BigInteger result;
+		result.values.resize( ( bits + DIGIT_BITS - 1 ) / DIGIT_BITS, 0 );
+		result.SetBit( n );
+		return result;
 	}
 
-	BigInteger& BigInteger::DonaldKnuthLongDivision( const BigInteger& other, BigInteger* r )
+	BigInteger BigInteger::RightShiftBlock( size_t d ) const
 	{
-		// Check if the divisor is greater than the dividend
-		if ( *this < other )
-		{
-			if ( r != nullptr )
-			{
-				r->values = std::move( values );
-			}
-			else
-			{
-				*this = 0;
-			}
-			return *this;
-		}
-
-		uint64_t   n = other.values.size();
-		uint64_t   m = values.size() - n;
-		uint64_t   qhat, rhat;
-		BigInteger un, vn;
-
-		// Calculate the shift for normalization
-		uint32_t shift = LeadingZeros( other.values[ n - 1 ] );
-
-		vn = other;
-		un = *this;
-		un.values.push_back( 0 );
-		vn <<= shift;
-		un <<= shift;
-
-		std::vector<digit_type> q;
-		q.resize( m + 1 );
-
-		// Perform Knuth's long division algorithm
-		for ( int64_t j = m; j >= 0; --j )
-		{
-			qhat = ( un[ j + n ] * BASE + un[ j + n - 1 ] ) / vn[ n - 1 ];
-			rhat = ( un[ j + n ] * BASE + un[ j + n - 1 ] ) % vn[ n - 1 ];
-
-			do
-			{
-				if ( qhat >= BASE || qhat * vn[ n - 2 ] > BASE * rhat + un[ j + n - 2 ] )
-				{
-					qhat--;
-					rhat += vn[ n - 1 ];
-				}
-				else
-				{
-					break;
-				}
-			} while ( rhat < BASE );
-
-			int64_t borrow = 0;
-			int64_t t = 0;
-
-			// Update the dividend with the quotient
-			for ( size_t i = 0; i < n; ++i )
-			{
-				uint64_t p = qhat * vn[ i ];
-				t = un[ i + j ] - borrow - ( p & ( BASE - 1 ) );
-				un[ i + j ] = t & ( BASE - 1 );
-				borrow = ( p >> EXPONENT ) - ( t >> EXPONENT );
-			}
-
-			t = un[ j + n ] - borrow;
-			un[ j + n ] = t;
-
-			q[ j ] = qhat;
-
-			if ( t < 0 )
-			{
-				// Adjust the dividend if the quotient resulted in a negative value
-				q[ j ]--;
-				borrow = 0;
-				for ( size_t i = 0; i < n; ++i )
-				{
-					t = un[ i + j ] + vn[ i ] + borrow;
-					un[ i + j ] = t & ( BASE - 1 );
-					borrow = t >> EXPONENT;
-				}
-				un[ j + n ] += borrow;
-			}
-		}
-
-		// Update the current instance with the quotient
-		values = std::move( q );
-		Clean();
-
-		if ( r != nullptr )
-		{
-			// Normalize and store the remainder
-			un >>= shift;
-			r->values = std::move( un.values );
-			r->Clean();
-		}
-
-		return *this;
+		if ( d >= Size() )
+			return 0;
+		BigInteger tmp;
+		tmp.values.assign( values.begin() + d, values.end() );	//shift d element, not bit
+		return tmp;
 	}
 
-	std::pair<BigInteger, BigInteger> BigInteger::NewtonIterationDivision( const BigInteger& divisor ) const
+	BigInteger BigInteger::LeftShiftBlock( size_t d ) const
 	{
-		// Check if the dividend is smaller than the divisor, return 0 as quotient and the dividend as remainder.
-		if ( *this < divisor )
-		{
-			return std::make_pair( BigInteger( 0 ), *this );
-		}
-
-		// Calculate the size of the dividend and divisor.
-		size_t dividend_size = this->Size();
-		size_t divisor_size = divisor.Size();
-
-		// Determine the initial approximation of the quotient size.
-		size_t k = dividend_size - divisor_size + 5;		  // k is the number of digits to shift.
-		size_t k2 = k > divisor_size ? 0 : divisor_size - k;  // k2 is the number of digits to shift in the divisor.
-
-		// Shift the divisor to the right by k2 bits to approximate the reciprocal.
-		BigInteger approximate_divisor = divisor.RightShiftBlock( k2 );
-		if ( k2 != 0 )
-		{
-			approximate_divisor += 1;  // Adjust for the shift.
-		}
-
-		// Calculate the size of the intermediate result.
-		size_t intermediate_size = k + approximate_divisor.Size();
-
-		// Multiply the dividend by the approximate reciprocal of the divisor.
-		BigInteger product = ( *this ) * approximate_divisor.DivisionInvertReciprocal( intermediate_size );
-
-		// Shift the product to the right by the required number of bits.
-		BigInteger quotient = product.RightShiftBlock( intermediate_size + k2 );
-
-		// Calculate the initial remainder.
-		BigInteger remainder = ( *this ) - quotient * divisor;
-
-		// Iterate to refine the quotient until the remainder is less than the divisor.
-		while ( remainder >= divisor )
-		{
-			quotient += 1;
-			remainder -= divisor;
-		}
-
-		// Return the final quotient and remainder.
-		return { quotient, remainder };
-	}
-
-	BigInteger& BigInteger::operator*=( const BigInteger& other )
-	{
-		if ( this == &other )
-		{
-			BigInteger self( other );
-			*this *= self;
-			return *this;
-		}
-
-		if ( IsZero() || other.IsZero() )
-		{
-			sign = 1;
-			values.resize( 1 );
-			values[ 0 ] = 0;
-			return *this;
-		}
-		sign *= other.sign;
-
-		/*
-			BASE <= Karatsuba <= FHT
-		*/
-
-		if ( std::min( values.size(), other.values.size() ) < BASE_MULTIPLY_LIMIT )
-		{
-			return BaseMultiplication( other );
-		}
-		else if ( ( values.size() + other.values.size() ) < FHT_MULTIPLY_LIMIT )
-		{
-			if ( *this == other )
-				return FHTSquare();
-			else
-				return FHTMultiplication( other );
-		}
-		else
-		{
-			return KaratsubaMultiplication( other );
-		}
-	}
-
-	BigInteger& BigInteger::operator/=( const BigInteger& other )
-	{
-		if ( this == &other )
-		{
-			BigInteger self( other );
-			*this /= self;
-			return *this;
-		}
-
-		sign *= other.sign;
-		Divide( other );
-		return *this;
-	}
-
-	BigInteger& BigInteger::operator%=( const BigInteger& other )
-	{
-		BigInteger r;
-		Divide( other, &r );
-		values = std::move( r.values );
-		return *this;
+		if ( IsZero() )
+			return 0;
+		BigInteger tmp;
+		tmp.values.reserve( values.size() + d );
+		tmp.values.resize( d );
+		tmp.values.insert( tmp.values.end(), values.begin(), values.end() );
+		return tmp;
 	}
 
 	BigInteger& BigInteger::Sqrt()
@@ -1124,10 +459,30 @@ namespace TwilightDream::BigInteger
 		{
 			s = u;
 			t = s + ( *this ) / s;
-			u = t >> ( uint8_t )1;
+			u = t >> ( uint32_t )1;
 		} while ( u < s );
 
 		values = std::move( s.values );
+		return *this;
+	}
+
+	BigInteger& BigInteger::Cbrt()
+	{
+		if (*this == 0)
+		{
+			return *this;
+		}
+
+		BigInteger x0 = *this;
+		BigInteger x1 = (2 * x0 + (*this / (x0 * x0))) / 3;
+
+		while (x1 < x0)
+		{
+			x0 = x1;
+			x1 = (2 * x0 + (*this / (x0 * x0))) / 3;
+		}
+
+		values = std::move(x0.values);
 		return *this;
 	}
 
@@ -1145,7 +500,7 @@ namespace TwilightDream::BigInteger
 			return *this;
 		}
 
-		size_t index_bits = exponent_value.BitSize();
+		size_t index_bits = exponent_value.BitLength();
 		for ( size_t i = 0; i < index_bits; i++ )
 		{
 			if ( exponent_value.GetBit( i ) )
@@ -1154,7 +509,7 @@ namespace TwilightDream::BigInteger
 				result %= modulo;
 			}
 
-			base.Power( 2 ) %= modulo;
+			base = base * base % modulo;
 		}
 
 		values = std::move( result.values );
@@ -1200,6 +555,10 @@ namespace TwilightDream::BigInteger
 
 	bool BigInteger::IsEven() const
 	{
+		if ( values.empty() )
+		{
+			return true;
+		}
 		return ( values[ 0 ] & 1 ) == 0;
 	}
 
@@ -1207,29 +566,30 @@ namespace TwilightDream::BigInteger
 	{
 		if ( this->IsZero() )
 			return false;
-
-		//Is the current sign bit state negative?
-		if ( this->sign == -1 )
-			return false;
-
-		//If the last binary bit is 0, it must be an even number, otherwise it is an odd number.
-		if ( ( values[ 0 ] & 1 ) == 0 )
+		size_t	   length = values.size();
+		digit_type n = values[ length - 1 ];
+		if ( ( n & ( n - 1 ) ) != 0 )
 		{
-			const BigInteger ONE( 1 );
-			const BigInteger TEMPORARY = *this & ( *this - ONE );
-
-			//Performs, on the copied entire array data, bitwise operations on whether the binary is a power of 2 or not.
-			return TEMPORARY.values == std::vector<digit_type>( TEMPORARY.values.size(), 0 );
+			return false;
 		}
-
-		return false;
+		size_t i = length - 1;
+		while ( i > 0 )
+		{
+			i--;
+			if ( values[ i ] != 0 )
+			{
+				return false;
+			}
+		}
+		return true;
 	}
 
+	// size() == 0, all elements are zeros -> true
 	bool BigInteger::IsZero() const
 	{
-		if ( values.size() == 1 )
+		if ( values.empty() )
 		{
-			return values.size() <= 1 && values[ 0 ] == 0;
+			return true;
 		}
 
 		return this->values == std::vector<digit_type>( this->values.size(), 0 );
@@ -1237,11 +597,6 @@ namespace TwilightDream::BigInteger
 
 	bool BigInteger::IsNegative() const
 	{
-		if ( sign == 1 )
-			return false;
-		else if ( sign == -1 )
-			return true;
-
 		return false;
 	}
 
@@ -1250,81 +605,100 @@ namespace TwilightDream::BigInteger
 		return values.size();
 	}
 
-	void BigInteger::CountLeadingZeros( size_t& result ) const
+	size_t BigInteger::CountLeadingZeros() const
 	{
-		if ( values.empty() )
-			return;
+		if ( IsZero() )
+			return 0;
 
-		digit_type value = 0;
-		for ( auto iter = values.rbegin(); iter != values.rend(); iter++ )
+		size_t block_length = values.size(), count = 0;
+		for ( size_t i = block_length; i > 0; i-- )
 		{
-			value = *iter;
-			if ( value == 0 )
+			if (values[i - 1] != 0 )
 			{
-				result += EXPONENT;
-			}
-			else
-			{
-				result += LeadingZeros( value );
+				count = DIGIT_BITS * (block_length - i) + HyperInt::hint_clz( values[i - 1] );
 				break;
 			}
 		}
+
+		return count;
 	}
 
-	uint16_t BigInteger::LeadingZeros( digit_type x )
+	size_t BigInteger::CountTrailingZeros() const
 	{
-		if ( x == 0 )
+		if ( IsZero() )
 		{
-			return EXPONENT;
+			return 0;
 		}
-
-		uint16_t n = 0;
-		while ( x <= ( BASE - 1 ) / 2 )
+		size_t block_length = values.size(), count = 0;
+		for ( size_t i = 0; i < block_length; i++ )
 		{
-			x <<= 1;
-			n++;
+			if (values[i] != 0)
+			{
+				count = DIGIT_BITS * i + HyperInt::hint_ctz(values[i]); 
+				break;
+			}
 		}
-
-		return n;
+		return count;
 	}
 
-	size_t BigInteger::BitSize() const
+	size_t BigInteger::BitLength() const
 	{
-		uint64_t   count = 0;
-		digit_type high = values[ values.size() - 1 ];
-		while ( high != 0 )
+		size_t length = values.size();
+		if ( length == 0 )
 		{
-			high >>= 1;
-			count += 1;
+			return 0;
 		}
+		return ( length - 1 ) * DIGIT_BITS + HyperInt::hint_bit_length( values[ length - 1 ] );
+	}
 
-		if ( count )
-			return ( values.size() - 1 ) * EXPONENT + count;
-		return ( values.size() ) * EXPONENT;
+	void BigInteger::SetBlock( size_t block_position, uint64_t value )
+	{
+		if ( block_position >= values.size() )
+		{
+			return;
+		}
+		values[ block_position ] = value;
+	}
+
+	digit_type BigInteger::GetBlock( size_t block_position ) const
+	{
+		if ( block_position >= values.size() )
+		{
+			return 0;
+		}
+		return values[ block_position ];
 	}
 
 	bool BigInteger::GetBit( size_t bit_position ) const
 	{
-		size_t wrapper_index = bit_position / EXPONENT;
-		size_t bit_index = bit_position - ( wrapper_index * EXPONENT );
+		size_t wrapper_index = bit_position / DIGIT_BITS;
+		if ( wrapper_index >= values.size() )
+		{
+			throw std::out_of_range( "Index out of range from GetBit( size_t bit_position )" );
+		}
+		size_t bit_index = bit_position - ( wrapper_index * DIGIT_BITS );
 		return values[ wrapper_index ] & ( digit_type( 1 ) << bit_index );
 	}
 
 	void BigInteger::SetBit( size_t bit_position )
 	{
-		size_t wrapper_index = bit_position / EXPONENT;
-		size_t bit_index = bit_position - ( wrapper_index * EXPONENT );
+		size_t wrapper_index = bit_position / DIGIT_BITS;
+		if ( wrapper_index >= values.size() )
+		{
+			throw std::out_of_range( "Index out of range from SetBit( size_t bit_position )" );
+		}
+		size_t bit_index = bit_position - ( wrapper_index * DIGIT_BITS );
 		values[ wrapper_index ] = values[ wrapper_index ] | ( digit_type( 1 ) << bit_index );
 	}
 
 	void BigInteger::SetBit( bool value, size_t bit_position )
 	{
-		if ( bit_position >= this->values.size() * EXPONENT )
+		size_t wrapper_index = bit_position / DIGIT_BITS;
+		if ( wrapper_index >= values.size() )
 		{
-			throw std::out_of_range( "Index out of range from set bit" );
+			throw std::out_of_range( "Index out of range from SetBit( bool value, size_t bit_position )" );
 		}
-		size_t wrapper_index = bit_position / EXPONENT;
-		size_t bit_index = bit_position - ( wrapper_index * EXPONENT );
+		size_t bit_index = bit_position - ( wrapper_index * DIGIT_BITS );
 
 		if ( value )
 		{
@@ -1332,163 +706,84 @@ namespace TwilightDream::BigInteger
 		}
 		else
 		{
-			this->values[ wrapper_index ] = values[ wrapper_index ] | ( digit_type( 0 ) << bit_index );
+			this->values[ wrapper_index ] = values[ wrapper_index ] & ( ~( digit_type( 1 ) << bit_index ) );
 		}
 	}
 
-	void BigInteger::ExtendedLeadingBits( size_t count, bool value )
+	std::byte BigInteger::GetByte( size_t byte_position ) const
 	{
-		// Calculate the number of digits needed to accommodate the new bits.
-		size_t newDigits = ( count + EXPONENT - 1 ) / EXPONENT;
-
-		const digit_type BIT_ZEROS = digit_type( 0 ) & BASE;
-		const digit_type BIT_ONES = ~digit_type( 0 ) & BASE;
-
-		// If needed, add new digits to the beginning of the values vector.
-		if ( newDigits > 0 )
+		size_t wrapper_index = byte_position / DIGIT_BYTES;
+		if ( wrapper_index >= values.size() )
 		{
-			values.insert( values.begin(), newDigits, value ? BIT_ONES : BIT_ZEROS );
+			return std::byte { 0 };
 		}
+		size_t	   byte_index = byte_position - ( wrapper_index * DIGIT_BYTES );
+		digit_type digit = values[ wrapper_index ];
+		return static_cast<std::byte>( digit >> ( byte_index * byte_bits ) );
+	}
 
-		// Adjust the bits within the existing most significant digit.
-		size_t remainingBits = count % EXPONENT;
-		if ( remainingBits > 0 )
+	void BigInteger::SetByte( size_t byte_position, std::byte byte_in )
+	{
+		size_t wrapper_index = byte_position / DIGIT_BYTES;
+		if ( wrapper_index >= values.size() )
 		{
-			digit_type& msb = values.back();
-			if ( value )
-			{
-				msb |= ( BIT_ONES >> ( EXPONENT - remainingBits ) );
-			}
-			else
-			{
-				msb &= ( BIT_ZEROS << remainingBits ) | ( BIT_ONES >> ( EXPONENT - remainingBits ) );
-			}
+			return;
 		}
+		size_t	   byte_index = byte_position - ( wrapper_index * DIGIT_BYTES );
+		digit_type digit = values[ wrapper_index ];
+		digit &= ~( digit_type( ( 1 << byte_bits ) - 1 ) << ( byte_index * byte_bits ) );
+		digit |= digit_type( byte_in ) << ( byte_index * byte_bits );
+		values[ wrapper_index ] = digit;
 	}
 
 	void BigInteger::SqueezeLeadingBits( size_t count )
 	{
-		const digit_type BIT_ZEROS = digit_type( 0 ) & BASE;
-		const digit_type BIT_ONES = ~digit_type( 0 ) & BASE;
-
-		// Calculate the number of digits needed to remove the specified bits.
-		size_t removedDigits = count / EXPONENT;
-
-		// If needed, remove digits from the beginning of the values vector.
-		if ( removedDigits > 0 )
+		if ( count >= BitLength() )
 		{
-			if ( removedDigits >= values.size() )
-			{
-				// Remove all digits if necessary.
-				values.clear();
-
-				// Keep the meaning of this large integer as the number 0
-				values.push_back( 0 );
-			}
-			else
-			{
-				values.erase( values.begin(), values.begin() + removedDigits );
-			}
+			return;
 		}
-
-		// Adjust the remaining bits within the new most significant digit.
-		size_t remainingBits = count % EXPONENT;
-		if ( remainingBits > 0 && !values.empty() )
+		size_t blocks = count / DIGIT_BITS;
+		size_t rem = count % DIGIT_BITS;
+		if ( count == 0 )
 		{
-			digit_type& msb = values.front();
-			msb &= ( BIT_ONES >> remainingBits );
+			values.resize( blocks );
 		}
+		else
+		{
+			values.resize( blocks + 1 );
+			digit_type mask = ( digit_type( 1 ) << count ) - 1;
+			values[ blocks ] &= mask;
+		}
+		Clean();
 	}
 
-	BigInteger& BigInteger::FromInt( uint64_t value )
+	void BigInteger::FromUnsignedInt(uint64_t value)
 	{
-		if ( value == 0 )
-		{
-			values.resize( 1 );
-			values[ 0 ] = 0;
-			return *this;
-		}
-		else if ( value < 0 )
-		{
-			value *= -1;
-			sign = -1;
-		}
-		if ( value < BASE )
-		{
-			values.push_back( value );
-			return *this;
-		}
+		values.clear();
 
-		size_t count = size_t( log10( value ) / log10( BASE ) + 1 );
-		values.reserve( count );
-		while ( value > 0 )
-		{
-			values.push_back( value % BASE );
-			value /= BASE;
-		}
-	}
-
-	int64_t BigInteger::ToInt() const
-	{
-		int64_t result = 0;
-		int64_t power = 1;
-		int64_t base = BASE;
-		for ( size_t i = 0; i < values.size(); ++i )
-		{
-			result += values[ i ] * power;
-			power *= base;
-		}
-
-		return result * sign;
+		values = std::vector<digit_type>(1, 0);
+		
+		this->SetBlock(0 ,value);
 	}
 
 	uint64_t BigInteger::ToUnsignedInt() const
 	{
-		uint64_t result = 0;
-		uint64_t power = 1;
-		uint64_t base = BASE;
-		size_t	 size = values.size();
-
-		for ( size_t i = 0; i < size; ++i )
+		if ( IsZero() )
 		{
-			result += values[ i ] * power;
-			power *= base;
+			return 0;
 		}
-
-		return result;
+		return values[ 0 ];
 	}
 
-	BigInteger& BigInteger::FromUnsignedInt( uint64_t value )
-	{
-		const uint64_t base = BASE;
-		const uint64_t MaxUint64 = std::numeric_limits<uint64_t>::max();
-
-		if ( value <= MaxUint64 / base )
-		{
-			return BigInteger( static_cast<uint64_t>( value ) );
-		}
-		else
-		{
-			std::vector<digit_type> values;
-			while ( value > 0 )
-			{
-				values.push_back( static_cast<digit_type>( value % base ) );
-				value /= base;
-			}
-
-			this->values = values;
-			return *this;
-		}
-	}
 	BigInteger BigInteger::operator&( const BigInteger& other ) const
 	{
-		BigInteger result = std::max( this->values.size(), other.values.size() ) ? ( *this ) : other;
+		BigInteger result = this->values.size() < other.values.size() ? ( *this ) : other;
 		size_t	   digit_size = std::min( this->values.size(), other.values.size() );
 		for ( size_t i = 0; i < digit_size; i++ )
 		{
 			result.values[ i ] = this->values[ i ] & other.values[ i ];
 		}
-
+		result.Clean();
 		return result;
 	}
 
@@ -1500,13 +795,12 @@ namespace TwilightDream::BigInteger
 
 	BigInteger BigInteger::operator|( const BigInteger& other ) const
 	{
-		BigInteger result = std::max( this->values.size(), other.values.size() ) ? ( *this ) : other;
+		BigInteger result = this->values.size() > other.values.size() ? ( *this ) : other;
 		size_t	   digit_size = std::min( this->values.size(), other.values.size() );
 		for ( size_t i = 0; i < digit_size; i++ )
 		{
 			result.values[ i ] = this->values[ i ] | other.values[ i ];
 		}
-
 		return result;
 	}
 
@@ -1521,23 +815,20 @@ namespace TwilightDream::BigInteger
 		BigInteger result = *this;
 		for ( size_t i = 0; i < this->values.size(); i++ )
 		{
-			result.values[ i ] = ~( this->values[ i ] );
-			result.values[ i ] <<= EXPONENT;
-			result.values[ i ] >>= EXPONENT;
+			result.values[ i ] = ~result.values[ i ];
 		}
-
 		return result;
 	}
 
 	BigInteger BigInteger::operator^( const BigInteger& other ) const
 	{
-		BigInteger result = std::max( this->values.size(), other.values.size() ) ? ( *this ) : other;
+		BigInteger result = this->values.size() > other.values.size() ? ( *this ) : other;
 		size_t	   digit_size = std::min( this->values.size(), other.values.size() );
 		for ( size_t i = 0; i < digit_size; i++ )
 		{
 			result.values[ i ] = this->values[ i ] ^ other.values[ i ];
 		}
-
+		result.Clean();
 		return result;
 	}
 
@@ -1547,62 +838,63 @@ namespace TwilightDream::BigInteger
 		return *this;
 	}
 
+	BigInteger BigInteger::LeftShiftBit( size_t shift ) const
+	{
+		const size_t block_shift = shift / DIGIT_BITS;
+		const size_t offset_shift = shift % DIGIT_BITS;
+		if ( 0 == offset_shift )
+		{
+			return LeftShiftBlock( block_shift );
+		}
+		size_t	   length = values.size();
+		BigInteger result;
+		result.values.resize( length + block_shift + 1 );
+
+		digit_type	 last = 0, current = 0;
+		const size_t high_shift = DIGIT_BITS - offset_shift;
+		for ( size_t i = 0; i < length; i++ )
+		{
+			last = current;
+			current = values[ i ];
+			result.values[ i + block_shift ] = ( last >> high_shift ) | ( current << offset_shift );
+		}
+		result.values[ length + block_shift ] = current >> high_shift;
+		result.Clean();
+		return result;
+	}
+
+	BigInteger BigInteger::RightShiftBit( size_t shift ) const
+	{
+		const size_t offset_shift = shift % DIGIT_BITS;
+		const size_t block_shift = shift / DIGIT_BITS;
+		if ( 0 == offset_shift )
+		{
+			return RightShiftBlock( block_shift );
+		}
+		size_t length = values.size();
+		if ( length < block_shift )
+		{
+			return 0;
+		}
+		BigInteger result;
+		result.values.resize( length - block_shift );
+		size_t		 i = length - block_shift;
+		digit_type	 last = 0, current = 0;
+		const size_t high_shift = DIGIT_BITS - offset_shift;
+		while ( i > 0 )
+		{
+			i--;
+			last = current;
+			current = values[ i + block_shift ];
+			result.values[ i ] = ( last << high_shift ) | ( current >> offset_shift );
+		}
+		result.Clean();
+		return result;
+	}
+
 	BigInteger& BigInteger::operator<<=( const uint32_t shift )
 	{
-		// If the shift is greater than the maximum exponent (EXPONENT)
-		if ( shift > EXPONENT )
-		{
-			/* Shift the binary representation */
-			//// Convert the BigInteger to a binary string
-			////binary_string[0] is MSB
-			////binary_string[binary_string.size() - 1] is LSB
-			//std::string binary_string = ToString( 2 );
-			//size_t		binary_string_size = binary_string.size();
-
-			//// If the binary string is shorter than the shift amount, pad it with zeros
-			//if ( binary_string_size < shift )
-			//{
-			//	binary_string.append( shift - binary_string_size, '0' );
-			//	FromString( binary_string, 2 );
-			//	return *this;
-			//}
-
-			//// Calculate the amount to shift within the binary string size
-			//uint32_t shift_amount = shift % binary_string_size;
-			//// Shift the binary string by removing the leading bits and appending zeros
-			//binary_string.erase( binary_string.begin(), binary_string.begin() + shift_amount );
-			//binary_string.append( shift_amount, '0' );
-			//// Convert the modified binary string back to a BigInteger
-			//FromString( binary_string, 2 );
-			//return *this;
-
-			auto shift_amount = shift;
-			while ( shift_amount >= EXPONENT )
-			{
-				BitLeftShiftCore( ( EXPONENT / 2 ) );
-
-				shift_amount -= ( EXPONENT / 2 );
-			}
-
-			*this >>= shift_amount;
-
-			return *this;
-		}
-
-		// If the shift is zero or negative, return the current BigInteger unchanged
-		if ( shift <= 0 )
-		{
-			return *this;
-		}
-
-		// If the BigInteger is zero, return it unchanged
-		if ( IsZero() )
-		{
-			return *this;
-		}
-
-		// If the shift is less and equal the maximum exponent, perform the shift directly on the BigInteger's internal representation
-		BitLeftShiftCore( shift );
+		*this = this->LeftShiftBit( shift );
 
 		// Return the modified BigInteger
 		return *this;
@@ -1610,311 +902,118 @@ namespace TwilightDream::BigInteger
 
 	BigInteger& BigInteger::operator>>=( const uint32_t shift )
 	{
-		// If the shift is greater than the maximum exponent (EXPONENT)
-		if ( shift > EXPONENT )
-		{
-			/*Shift the binary representation*/
-			//// Convert the BigInteger to a binary string
-			////binary_string[0] is MSB
-			////binary_string[binary_string.size() - 1] is LSB
-			//std::string binary_string = ToString( 2 );
-			//size_t		binary_string_size = binary_string.size();
-
-			//// If the shift is greater than or equal to the size of the binary string, set the BigInteger to zero
-			//if ( shift >= binary_string_size )
-			//{
-			//	*this = BigInteger(0);
-			//	return *this;
-			//}
-
-			//// Calculate the amount to shift within the binary string size
-			//uint32_t	shift_amount = shift % binary_string_size;
-			//// Shift the binary string by removing the trailing bits and inserting zeros at the beginning
-			//binary_string.erase( binary_string.end() - shift_amount, binary_string.end());
-			//binary_string.insert( binary_string.begin(), shift_amount, '0' );
-			//// Convert the modified binary string back to a BigInteger
-			//FromString( binary_string, 2 );
-			//return *this;
-
-			auto shift_amount = shift;
-
-			while ( shift_amount >= EXPONENT )
-			{
-				BitRightShiftCore( ( EXPONENT / 2 ) );
-
-				shift_amount -= ( EXPONENT / 2 );
-			}
-
-			*this >>= shift_amount;
-
-			return *this;
-		}
-
-		// If the shift is zero or negative, return the current BigInteger unchanged
-		if ( shift <= 0 )
-		{
-			return *this;
-		}
-
-		// If the BigInteger is zero, return it unchanged
-		if ( IsZero() )
-		{
-			return *this;
-		}
-
-		// If the shift is less and equal the maximum exponent, perform the shift directly on the BigInteger's internal representation
-		BitRightShiftCore( shift );
-
-		// Clean up any leading zeros that may have been introduced by the shift operation
-		Clean();
+		*this = this->RightShiftBit( shift );
 
 		// Return the modified BigInteger
 		return *this;
 	}
 
-	BigInteger BigInteger::BitRotateLeft( const BigInteger& bits, uint32_t shift, const uint32_t reference_bit_capacity )
+	// F_{2}
+	// 2^{7} < bits < 2^{8}
+	// 10110110, shift = 1, reference_bit_capacity = 8
+	// 01101101
+	// n <<< m
+	// [m,n-m]
+	// [n-m,m]
+	// n<<m
+	// n>>n-m
+
+	BigInteger BigInteger::BitRotateLeft( const BigInteger& bits, size_t shift, size_t reference_bit_capacity = 0 )
 	{
 		// Check if the BigInteger is zero, if so, no rotation is needed
-		if ( bits.IsZero() || reference_bit_capacity == 0 )
+		if ( bits.IsZero() )
+		{
 			return bits;
-
-		shift %= reference_bit_capacity;
-
-#if 1
-
-		// Convert the BigInteger to a binary string representation
-		// The binary string length based on the reference_bit_capacity
-		std::string binary_string = bits.ToBinaryString( reference_bit_capacity );
-
-		// Left rotate the binary string
-		std::rotate( binary_string.begin(), binary_string.begin() + shift, binary_string.end() );
+		}
+		if( shift >= reference_bit_capacity )
+		{
+			shift %= reference_bit_capacity;
+		}
 
 		BigInteger result;
-
-		// Update the BigInteger with the rotated binary string
-		result.FromString( binary_string, 2 );
-
-		// Ensure the BigInteger has the desired bit capacity
-		if ( reference_bit_capacity / EXPONENT != result.values.size() )
+		size_t	   true_bits = bits.BitLength();
+		if ( reference_bit_capacity >= true_bits )
 		{
-			size_t bit_size = result.BitSize();
-			if ( bit_size < reference_bit_capacity )
-				result.ExtendedLeadingBits( reference_bit_capacity - bit_size, false );
+			BigInteger left = bits << shift;
+			BigInteger right = bits >> ( reference_bit_capacity - shift );
+
+			result = left | right;
+			result.SqueezeLeadingBits( reference_bit_capacity );
+			return result;
 		}
-
-#else
-
-		BigInteger left = *this << shift;
-		BigInteger right = *this >> shift;
-
-		size_t bit_size = left.BitSize();
-		if ( bit_size < reference_bit_capacity )
+		else
 		{
-			left.ExtendedLeadingBits( reference_bit_capacity - bit_size, false );
+			BigInteger rotate_part = bits, steady_part = bits >> reference_bit_capacity;
+			rotate_part.SqueezeLeadingBits( reference_bit_capacity );
+			steady_part <<= reference_bit_capacity;
+			BigInteger left = rotate_part << shift;
+			BigInteger right = rotate_part >> ( reference_bit_capacity - shift );
+			result = left | right;
+			result.SqueezeLeadingBits( reference_bit_capacity );
+			result |= steady_part;
 		}
-		bit_size = right.BitSize();
-		if ( bit_size < reference_bit_capacity )
-		{
-			right.ExtendedLeadingBits( reference_bit_capacity - bit_size, false );
-		}
-
-		BigInteger result = left | right;
-		bit_size = result.BitSize();
-		if ( bit_size < reference_bit_capacity )
-		{
-			this->ExtendedLeadingBits( reference_bit_capacity - bit_size, false );
-		}
-
-#endif
-
 		return result;
 	}
 
-	BigInteger BigInteger::BitRotateRight( const BigInteger& bits, uint32_t shift, const uint32_t reference_bit_capacity )
+	BigInteger BigInteger::BitRotateRight( const BigInteger& bits, size_t shift, size_t reference_bit_capacity = 0 )
 	{
 		// Check if the BigInteger is zero, if so, no rotation is needed
-		if ( bits.IsZero() || reference_bit_capacity == 0 )
+		if ( bits.IsZero() )
+		{
 			return bits;
-
-		shift %= reference_bit_capacity;
-
-#if 1
-
-		// Convert the BigInteger to a binary string representation
-		// The binary string length based on the reference_bit_capacity
-		std::string binary_string = bits.ToBinaryString( reference_bit_capacity );
-
-		// Right rotate the binary string
-		std::rotate( binary_string.rbegin(), binary_string.rbegin() + shift, binary_string.rend() );
+		}
+		if( shift >= reference_bit_capacity )
+		{
+			shift %= reference_bit_capacity;
+		}
 
 		BigInteger result;
-
-		// Update the BigInteger with the rotated binary string
-		result.FromString( binary_string, 2 );
-
-		// Ensure the BigInteger has the desired bit capacity
-		if ( reference_bit_capacity / EXPONENT != result.values.size() )
+		size_t	   true_bits = bits.BitLength();
+		if ( reference_bit_capacity >= true_bits )
 		{
-			size_t bit_size = result.BitSize();
-			if ( bit_size < reference_bit_capacity )
-				result.ExtendedLeadingBits( reference_bit_capacity - bit_size, false );
+			BigInteger left = bits >> shift;
+			BigInteger right = bits << ( reference_bit_capacity - shift );
+
+			result = left | right;
+			result.SqueezeLeadingBits( reference_bit_capacity );
+			return result;
 		}
-
-#else
-
-		BigInteger right = *this >> shift;
-		BigInteger left = *this << shift;
-
-		size_t bit_size = right.BitSize();
-		if ( bit_size < reference_bit_capacity )
+		else
 		{
-			right.ExtendedLeadingBits( reference_bit_capacity - bit_size, false );
+			BigInteger rotate_part = bits, steady_part = bits >> reference_bit_capacity;
+			rotate_part.SqueezeLeadingBits( reference_bit_capacity );
+			steady_part <<= reference_bit_capacity;
+			BigInteger left = rotate_part >> shift;
+			BigInteger right = rotate_part << ( reference_bit_capacity - shift );
+			result = left | right;
+			result.SqueezeLeadingBits( reference_bit_capacity );
+			result |= steady_part;
 		}
-		bit_size = left.BitSize();
-		if ( bit_size < reference_bit_capacity )
-		{
-			left.ExtendedLeadingBits( reference_bit_capacity - bit_size, false );
-		}
-
-		BigInteger result = left | right;
-		bit_size = result.BitSize();
-		if ( bit_size < reference_bit_capacity )
-		{
-			this->ExtendedLeadingBits( reference_bit_capacity - bit_size, false );
-		}
-
-#endif
-
 		return result;
 	}
 
-	digit_type& BigInteger::operator[]( const size_t index )
-	{
-		return values[ index ];
-	}
-
-	BigInteger& BigInteger::operator=( const BigInteger& other )
+	BigInteger& BigInteger::operator=( const BigInteger& other ) noexcept
 	{
 		if ( this == &other )
 			return *this;
 
 		values = other.values;
-		sign = other.sign;
 		return *this;
 	}
 
-	bool BigInteger::operator&&( const BigInteger& other ) const
+	BigInteger& BigInteger::operator=( BigInteger&& other ) noexcept
 	{
-		bool left = this->IsZero();
-		bool right = other.IsZero();
+		if ( this == &other )
+			return *this;
 
-		if ( ( left == true ) && ( right == true ) )
-			return false;
-		else if ( ( left == false ) && ( right == false ) )
-			return true;
-		else
-			return false;
-	}
-
-	bool BigInteger::operator||( const BigInteger& other ) const
-	{
-		bool left = this->IsZero();
-		bool right = other.IsZero();
-
-		if ( ( left == true ) && ( right == true ) )
-			return false;
-		else if ( ( left == false ) || ( right == false ) )
-			return true;
-	}
-
-	bool BigInteger::operator!() const
-	{
-		return !this->IsZero();
+		values = std::move( other.values );
+		other.values.clear();
+		return *this;
 	}
 
 	BigInteger BigInteger::Abs() const
 	{
-		BigInteger copy = *this;
-
-		if ( this->IsNegative() )
-		{
-			return -copy;
-		}
-
-		return copy;
-	}
-
-	BigInteger BigInteger::ModuloArithmetic( ArithmeticMode mode, const BigInteger& a, const BigInteger& b, const BigInteger& modulus )
-	{
-		if (modulus.IsZero())
-		{
-			throw std::invalid_argument("The modulus cannot be zero!");
-		}
-
-		BigInteger temporary;
-
-		switch (mode)
-		{
-			case ArithmeticMode::Addition:
-				temporary = a + b;
-				break;
-			case ArithmeticMode::Subtraction:
-				temporary = a - b;
-				break;
-			case ArithmeticMode::Multiplication:
-				temporary = a * b;
-				break;
-			case ArithmeticMode::Division:
-				if (!b.IsZero())
-				{
-					BigInteger inverse = BigInteger::ModuloInverse(b, modulus);
-					if (!inverse.IsZero())
-					{
-						temporary = a * inverse;
-					}
-					else
-					{
-						throw std::invalid_argument("The b is not have multiplication inverse with modulo the modulus number, This mean (a * b) mod modulus_number != (a * inverse(b)) mod modulus_number");
-					}
-				}
-				else
-				{
-					throw std::invalid_argument("Division by zero!");
-				}
-				break;
-			default:
-				throw std::invalid_argument("Invalid modulo arithmetic mode!");
-				break;
-		}
-
-		return Modulo(temporary, modulus);
-	}
-
-	std::string BigInteger::ToString() const
-	{
-		if ( *this == 0 )
-		{
-			return "0";
-		}
-
-		uint64_t   m = 0;
-		BigInteger a = *this;
-
-		const BigInteger TEN( 10 );
-
-		std::string number_string;
-		while ( !a.IsZero() )
-		{
-			number_string += ( a % TEN ).values[ 0 ] + '0';
-
-			a /= TEN;
-			m++;
-		}
-		if ( sign == -1 )
-			number_string += '-';
-
-		std::reverse( number_string.begin(), number_string.end() );
-		return number_string;
+		return BigInteger(*this);
 	}
 
 	std::string BigInteger::ToBinaryString( const uint32_t reference_bit_capacity, bool have_leading_zeros ) const
@@ -1929,7 +1028,7 @@ namespace TwilightDream::BigInteger
 
 			// Copy the current BigInteger for modification
 			BigInteger result = *this;
-			size_t	   bit_size = result.BitSize();
+			size_t	   bit_size = result.BitLength();
 
 			// Set binary digits based on the BigInteger bits
 			for ( size_t i = 0; i < bit_size; i++ )
@@ -1954,7 +1053,7 @@ namespace TwilightDream::BigInteger
 
 			// Copy the current BigInteger for processing
 			BigInteger result = *this;
-			size_t	   bit_size = result.BitSize();
+			size_t	   bit_size = result.BitLength();
 
 			// Set binary digits based on the BigInteger bits
 			for ( size_t i = 0; i < bit_size; i++ )
@@ -1970,39 +1069,38 @@ namespace TwilightDream::BigInteger
 
 	std::string BigInteger::ToString( uint32_t base_value ) const
 	{
-		if ( *this == 0 )
+		if ( IsZero() )
 		{
 			return "0";
 		}
 
-		uint64_t   m = 0;
-		BigInteger a = *this;
-
-		std::string number_string;
+		auto numberToChar = []( uint32_t n ) {
+			if ( 0 <= n && n <= 9 )
+			{
+				return char( n + '0' );
+			}
+			if ( 10 <= n && n <= 35 )
+			{
+				return char( n - ( 10 - 'A' ) );
+			}
+			return '\0';
+		};
 
 		// Calculate the number of the current bit
 		if ( base_value == 2 )
 		{
-			std::cout << "Warning: Empty string has been returned! \nThe \"ToString\" function does not support binary generation, please use the \"ToBinaryString\" function." << std::endl;
-			return number_string;
+			return ToBinaryString( BitLength() );
 		}
 
-		BigInteger STRING_BASE = BigInteger( base_value );
-		BigInteger rem;
-		while ( !a.IsZero() )
+		BigInteger	copy = *this;
+		std::string number_string;
+
+		while ( !copy.IsZero() )
 		{
 			// Calculate the current digit, divide the number in the current bit by 2 from a.
-			a.ShortDivision( STRING_BASE, &rem );
-			uint64_t digit = rem.values[ 0 ];
-
-			// Convert digits(number) to characters
-			number_string += ( digit < 10 ? '0' + digit : 'A' + digit - 10 );
-
-			// Update m for possible subsequent negative symbols
-			m++;
+			char c = numberToChar( copy.DividModuloNumber( base_value ) );
+			number_string += c;
 		}
-		if ( sign == -1 )
-			number_string += '-';
 
 		std::reverse( number_string.begin(), number_string.end() );
 		return number_string;
@@ -2010,24 +1108,7 @@ namespace TwilightDream::BigInteger
 
 	void BigInteger::FromString( const std::string& number_string )
 	{
-		size_t	   i = 0, count = number_string.length();
-		BigInteger n, result = 0;
-
-		if ( number_string[ 0 ] == '-' )
-		{
-			sign = -1;
-			i++;
-		}
-
-		const BigInteger TEN( 10 );
-
-		for ( i; i < count; ++i )
-		{
-			result *= TEN;
-			n = number_string[ i ] - '0';
-			result += n;
-		}
-		values = std::move( result.values );
+		FromString( number_string, 10 );
 	}
 
 	void BigInteger::FromString( const std::string& number_string, uint32_t base_value )
@@ -2042,91 +1123,45 @@ namespace TwilightDream::BigInteger
 			throw std::invalid_argument( "Base must be less than or equal to 36." );
 		}
 
-		size_t	   i = 0, count = number_string.length();
-		BigInteger result = 0;
-		sign = 1;
-
-		if ( number_string[ 0 ] == '-' )
-		{
-			sign = -1;
-			i++;
-		}
-
-		BigInteger STRING_BASE = BigInteger( base_value );
-		// If the format conversion is binary-based
-		if ( base_value == 2 )
-		{
-			result.ExtendedLeadingBits( count - result.BitSize(), false );
-
-			for ( i; i < count; ++i )
+		auto charToNumber = []( char c ) {
+			if ( '0' <= c && c <= '9' )
 			{
-				result.SetBit( number_string[ i ] == '1' ? true : false, ( count - 1 ) - i );
+				return c - '0';
 			}
+			if ( 'A' <= c && c <= 'Z' )
+			{
+				return c - ( 'A' - 10 );
+			}
+			if ( 'a' <= c && c <= 'z' )
+			{
+				return c - ( 'a' - 10 );
+			}
+			return 37;
+		};
 
-			values = std::move( result.values );
-
+		size_t count = number_string.length();
+		values.clear();
+		if ( 0 == count )
+		{
 			return;
 		}
-
-		for ( i; i < count; ++i )
+		if ( base_value == 2 )
 		{
-			// Get the current character in the string
-			char c = number_string[ i ];
-			if ( c >= '0' && c <= '9' )
+			values.resize( ( count + 63 ) / 64 );
+			for ( size_t i = 0; i < count; i++ )
 			{
-				// The position of the progression is moved and the current number needs to be multiplied by the current progression.
-				result *= STRING_BASE;
-
-				// Convert characters to digits(numbers)
-				int digit = c - '0';
-				if ( digit >= base_value )
-				{
-					throw std::invalid_argument( "Invalid digit for specified base." );
-				}
-
-				// Calculate the current digit to this result
-				result += BigInteger( digit );
+				SetBit( number_string[ count - i - 1 ] == '1', i );
 			}
-			else if ( c >= 'A' && c <= 'Z' )
-			{
-				// The position of the progression is moved and the current number needs to be multiplied by the current progression.
-				result *= STRING_BASE;
-
-				// Convert characters to digits(numbers)
-				int digit = 10 + c - 'A';
-				if ( digit >= base_value )
-				{
-					throw std::invalid_argument( "Invalid digit for specified base." );
-				}
-
-				// Calculate the current digit to this result
-				result += BigInteger( digit );
-			}
-			else
-			{
-				throw std::invalid_argument( "Invalid character in input string." );
-			}
+			return;
 		}
-
-		values = std::move( result.values );
-	}
-
-	void BigInteger::Print( bool base10 ) const
-	{
-		if ( base10 )
+		for ( size_t i = 0; i < count; i++ )
 		{
-			std::cout << ToString( 10 ) << "\n\n";
-		}
-		else
-		{
-			if ( sign == -1 )
-				std::cout << "-";
-
-			for ( const auto& i : values )
+			int n = charToNumber( number_string[ i ] );
+			if ( n >= base_value || n < 0 )
 			{
-				std::cout << i;
+				throw std::invalid_argument( "Invalid digit for specified base." );
 			}
-			std::cout << "\n\n" << values.size() << " digits" << std::endl;
+			AddMultiplyNumber( n, base_value );
 		}
 	}
 
@@ -2275,195 +1310,884 @@ namespace TwilightDream::BigInteger
 
 	BigInteger BigInteger::GCD( BigInteger a, BigInteger b )
 	{
-		BigInteger temp, t = 1;
+		/*
+			Stein’s binary & Classic Algorithm for finding GCD
+			Hybrid mode
+		*/
 
-		while ( a.IsEven() && b.IsEven() )
+		if ( a.IsZero() )
 		{
-			t <<= 1;
-			a >>= 1;
-			b >>= 1;
+			return b;
 		}
-		while ( a.IsEven() )
+
+		if ( b.IsZero() )
 		{
-			a >>= 1;
+			return a;
 		}
-		while ( b.IsEven() )
+
+		size_t trailing_zeroes_a = a.CountTrailingZeros();
+		size_t trailing_zeroes_b = b.CountTrailingZeros();
+		size_t common_factors_of_2 = std::min( trailing_zeroes_a, trailing_zeroes_b );
+		
+		a >>= trailing_zeroes_a;
+		b >>= trailing_zeroes_b;
+
+		do
 		{
-			b >>= 1;
-		}
-		while ( a != b )
-		{
-			temp = ( a < b ? a : b );
-			a.Difference( b );
-			b = temp;
-			while ( a.IsEven() )
+			b >>= b.CountTrailingZeros();
+			
+			if(a > b)
 			{
-				a >>= 1;
+				Swap(b, a);
 			}
-		}
 
-		return t * a;
-	}
-
-	void BigInteger::EGCD( const BigInteger& a, const BigInteger& b, BigInteger* gcd, BigInteger* co1, BigInteger* co2 )
-	{
-		BigInteger old_r, r;
-		BigInteger old_s, s;
-		BigInteger old_t, t;
-		BigInteger q, temp;
-
-		old_r = a;
-		r = b;
-		old_s = 1;
-		s = 0;
-		old_t = 0;
-		t = 1;
-
-		while ( !r.IsZero() )
-		{
-			q = old_r / r;
-
-			temp = r;
-			BigInteger testk = q * temp;
-			r = old_r - testk;
-			old_r = temp;
-
-			temp = s;
-			s = old_s - q * temp;
-			old_s = temp;
-
-			temp = t;
-			t = old_t - q * temp;
-			old_t = temp;
-		}
-
-		if ( co1 != nullptr )
-			( *co1 ) = old_s;
-		if ( co2 != nullptr )
-			( *co2 ) = old_t;
-		if ( gcd != nullptr )
-			( *gcd ) = old_r;
+			b -= a;
+			
+		} while ( !b.IsZero() );
+		
+		return a << common_factors_of_2;
 	}
 
 	BigInteger BigInteger::LCM( const BigInteger& a, const BigInteger& b )
 	{
 		BigInteger result = a * b;
-		result.sign = 1;
 		result /= GCD( a, b );
 		return result;
 	}
 
-	BigInteger BigInteger::ModuloInverse( const BigInteger& a, const BigInteger& b )
-	{
-		BigInteger gcd, x;
-
-		EGCD( a, b, &gcd, &x, nullptr );
-		return ( x % b + b ) % b;
-	}
-
 	BigInteger BigInteger::PollardRho( const BigInteger& n )
 	{
+		const size_t	 bits = n.BitLength();
 		const BigInteger zero( 0 );
 		const BigInteger one( 1 );
 		const BigInteger two( 2 );
 
 		// Handle special cases
-		if ( n == 1 )
+		if ( n == one )
 			return n;
 		if ( n % two == zero )
 			return 2;
 
-		// Initialize variables for the algorithm
-		BigInteger x = 2, y = 2, d = 1, diff;
-		uint64_t   i = 0;
+		BigInteger counter = 0;
+		BigInteger sqrt_n = n;
+		sqrt_n.Sqrt();
+	RetryAlgorithm:
 
-		// Perform Pollard's Rho algorithm
+		/* Initialize variables for the algorithm */
+
+		// We will pick from the range [2, N)
+		BigInteger x = ( RandomGenerateNBit( bits ) % ( n - two ) ) + two;
+		BigInteger y = x;
+
+		// The constant in f(x).
+		// Algorithm can be re-run with a different c if it throws failure for a composite.
+		BigInteger c = ( RandomGenerateNBit( bits ) % ( n - one ) ) + one;
+
+		BigInteger d = one, diff;
+
+		/* Perform Pollard's Rho algorithm */
 		while ( d == one )
 		{
-			x = x * x;
-			x.Add( one );
-			x %= n;
+			// Tortoise Move: x(i+1) = f(x(i))
+			x = ( x.PowerWithModulo( two, n ) + c + n ) % n;
 
-			y = y * y;
-			y.Add( one );
-			y %= n;
-			y = y * y;
-			y.Add( one );
-			y %= n;
+			// Hare Move: y(i+1) = f(f(y(i)))
+			y = ( y.PowerWithModulo( two, n ) + c + n ) % n;
+			y = ( y.PowerWithModulo( two, n ) + c + n ) % n;
 
-			diff = ( x > y ? x : y );
-			diff = diff.Subtract( ( x > y ? y : x ) );
-			d = GCD( diff, n );
+			// Check gcd of |x-y| and n
+			diff = x;
+			d = GCD( diff.Subtract( y ).Abs(), n );
+
+			// Check if a non-trivial factor is found
+			if ( d == n )
+			{
+				if ( counter == sqrt_n )
+				{
+					break;
+				}
+				counter = counter + 1;
+				//Retry if the algorithm fails to find prime factor with chosen x and c
+				goto RetryAlgorithm;
+			}
+			else
+				return d;
 		}
 
-		// Check if a non-trivial factor is found
-		if ( d == n )
-			return -1;
-		else
-			return d;
+		return n;
+	}
+
+	BigInteger BigInteger::BigInteger::BabyStepGiantStep( const BigInteger& base, const BigInteger& result, const BigInteger& modulo )
+	{
+		BigInteger bounds = modulo;
+		bounds = bounds.Sqrt() + 1;
+
+		// Calculate a ^ n
+		BigInteger an = 1;
+		for ( BigInteger i = 0; i < bounds; i = i + 1 )
+			an.MultiplyWithModulo( base, modulo );
+
+		// Baby steps: Save all values of a^(n*i) of LHS
+		BigInteger												 value = an;
+		std::unordered_map<BigInteger, BigInteger, HashFunction> BabySteps;
+		for ( BigInteger i = 1; i <= bounds; i = i + 1 )
+		{
+			if ( !BabySteps[ value ] )
+				BabySteps[ value ] = i;
+			value.MultiplyWithModulo( an, modulo );
+		}
+
+		value = result;
+		// Giant steps: load baby steps
+		for ( BigInteger i = 0; i <= bounds; i = i + 1 )
+		{
+			// Calculate (a ^ j) * b and check for collision
+			if ( BabySteps[ value ] )
+			{
+				BigInteger answer = BabySteps[ value ] * bounds - i;
+				if ( answer < modulo )
+					return answer;
+			}
+			value.MultiplyWithModulo( base, modulo );
+		}
+
+		// By a^{x} ≡ b (mod p), is not exist x
+		return BigInteger( 0 );
 	}
 
 	BigInteger BigInteger::RandomGenerateNBit( size_t n )
 	{
-		std::uniform_int_distribution<uint16_t> dist01( 0, 1 );
-		BigInteger								ud_prng( 0 );
-		size_t									digit_type_count = n % EXPONENT == 0 ? n / EXPONENT : n / EXPONENT + 1;
-		ud_prng.values = std::vector<digit_type>( digit_type_count, 0 );
-		ud_prng.SetBit( n - 1 );
-		for ( size_t i = 0; i < n; ++i )
+		static std::mt19937_64					rng( std::random_device {}() );
+		std::uniform_int_distribution<uint64_t> dist( 0, std::numeric_limits<uint64_t>::max() );
+		BigInteger								ud_result = BigInteger( 0 );
+		size_t									digit_type_count = ( n + DIGIT_BITS - 1 ) / DIGIT_BITS;
+		ud_result.values = std::vector<digit_type>( digit_type_count, 0 );
+		for ( size_t i = 0; i < digit_type_count; ++i )
 		{
-			if ( dist01( RandomEngine ) == 1 )
-			{
-				ud_prng.SetBit( true, i );
-			}
+			ud_result.values[ i ] = dist( rng );
 		}
-
-		return ud_prng;
+		ud_result.SetBit( n - 1 );
+		for ( size_t i = n; i < digit_type_count * DIGIT_BITS; i++ )
+		{
+			ud_result.SetBit( false, i );
+		}
+		return ud_result;
 	}
 
-	BigInteger BigInteger::Log2() const
+	size_t BigInteger::Log2() const
 	{
-		if (IsZero())
+		if ( IsZero() )
 		{
 			// Logarithm of 0 is undefined, return an error code.
 			return -1;
 		}
-		if (*this == 1)
-		{
-			// Logarithm of 1 is 0.
-			return 0;
-		}
-
-		BigInteger log2 = 0;
-		BigInteger current = *this;
-		while (current > 1)
-		{
-			// Shift current right by one bit.
-			current >>= 1;
-			log2++;
-		}
-
-		return log2;
+		return BitLength() - 1;
 	}
 
-	BigInteger BigInteger::Modulo( const BigInteger& number, const BigInteger& modulus )
+	/*
+	
+		BigSignedInteger
+	
+	*/
+
+	BigSignedInteger::BigSignedInteger() {}
+
+	BigSignedInteger::BigSignedInteger( int64_t n ) : sign( n < 0 ), uint_data( std::abs( n ) ) {}
+
+	BigSignedInteger::BigSignedInteger( const BigSignedInteger& other ) noexcept : sign( other.sign ), uint_data( other.uint_data ) {}
+
+	BigSignedInteger::BigSignedInteger( BigSignedInteger&& other ) noexcept : sign( std::move( other.sign ) ), uint_data( std::move( other.uint_data ) ) {}
+
+	BigSignedInteger::BigSignedInteger( const BigInteger& other, bool new_sign ) : sign( new_sign ), uint_data( other ) {}
+
+	BigSignedInteger::BigSignedInteger( BigInteger&& other, bool new_sign ) : sign( new_sign ), uint_data( std::move( other ) ) {}
+
+	BigSignedInteger::BigSignedInteger( const std::string& number_string )
 	{
-		if(number.IsZero())
+		if ( !number_string.empty() && number_string[ 0 ] == '-' )
 		{
-			return BigInteger(0);
+			sign = true;
+			std::string str = std::string( number_string.begin() + 1, number_string.end() );
+			uint_data.FromString( str, 10 );
+		}
+		else
+		{
+			uint_data.FromString( number_string, 10 );
+		}
+	}
+
+	BigSignedInteger::BigSignedInteger( const std::string& number_string, uint32_t base )
+	{
+		if ( !number_string.empty() && number_string[ 0 ] == '-' )
+		{
+			sign = true;
+			std::string str = std::string( number_string.begin() + 1, number_string.end() );
+			uint_data.FromString( str, base );
+		}
+		else
+		{
+			uint_data.FromString( number_string, base );
+		}
+	}
+
+	BigSignedInteger::operator BigInteger() const
+	{
+		return uint_data;
+	}
+
+	BigSignedInteger BigSignedInteger::Abs()
+	{
+		if ( this->sign == true )
+		{
+			BigSignedInteger abs = *this;
+			abs.sign = false;
+			return abs;
 		}
 
-		BigInteger result;
+		return *this;
+	}
 
-		/*if ( modulus.IsPowerOfTwo() )
+	bool BigSignedInteger::IsZero() const
+	{
+		return !this->sign && this->uint_data.IsZero();
+	}
+
+	bool BigSignedInteger::IsNegative() const
+	{
+		return this->sign;
+	}
+
+	size_t BigSignedInteger::Size() const
+	{
+		return this->uint_data.Size();
+	}
+
+	size_t BigSignedInteger::BitLength() const
+	{
+		return this->uint_data.BitLength();
+	}
+
+	void BigSignedInteger::Print(uint32_t base_value) const
+	{
+		if ( sign )
 		{
-			result = number & ( modulus - 1 );
-			result.Clean();
-			return result;
-		}*/
+			std::cout << "-\t";
+		}
+		else
+		{
+			std::cout << "+\t";
+		}
+		uint_data.Print(base_value);
+	}
 
-		result = number % modulus;
-		result.Clean();
+	void BigSignedInteger::PrintBinary(bool have_space_with_block) const
+	{
+		if ( sign )
+		{
+			std::cout << "-\t";
+		}
+		else
+		{
+			std::cout << "+\t";
+		}
+		uint_data.PrintBinary(have_space_with_block);
+	}
+
+	std::string BigSignedInteger::ToBinaryString( const uint32_t reference_bit_capacity, bool have_leading_zeros ) const
+	{
+		std::string result;
+		if ( this->IsNegative() )
+		{
+			result += '-';
+		}
+		result += uint_data.ToBinaryString(reference_bit_capacity, have_leading_zeros);
 		return result;
 	}
+
+	std::string BigSignedInteger::ToString( uint32_t base_value ) const
+	{
+		std::string result;
+		if ( this->IsNegative() )
+		{
+			result += '-';
+		}
+		result += uint_data.ToString( base_value );
+		return result;
+	}
+
+	void BigSignedInteger::FromString( const std::string& number_string, bool new_sign )
+	{
+		uint_data.FromString(number_string);
+		this->sign = new_sign;
+	}
+
+	void BigSignedInteger::FromString( const std::string& number_string, uint32_t base_value, bool new_sign )
+	{
+		uint_data.FromString(number_string, base_value);
+		this->sign = new_sign;
+	}
+
+	void BigSignedInteger::FromUnsignedInt(uint64_t value)
+	{
+		uint_data.FromUnsignedInt(value);
+		this->sign = false;
+	}
+
+	uint64_t BigSignedInteger::ToUnsignedInt() const
+	{
+		return uint_data.GetBlock(0);
+	}
+
+	void BigSignedInteger::FromSignedInt(int64_t value)
+	{
+		uint_data.FromUnsignedInt(static_cast<uint64_t>(std::abs(value)));
+		sign = (value < 0);
+	}
+
+	int64_t BigSignedInteger::ToSignedInt(bool is_negative) const
+	{
+		uint64_t value = uint_data.GetBlock(0);
+		
+		if (value > static_cast<uint64_t>(std::numeric_limits<int64_t>::max()))
+		{
+			value %= static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) + 1;
+		}
+
+		return is_negative ? -static_cast<int64_t>(value) : static_cast<int64_t>(value);
+	}
+
+	BigSignedInteger BigSignedInteger::operator-() const
+	{
+		if ( this->sign == false )
+		{
+			BigSignedInteger copy( *this );
+
+			copy.sign = true;
+
+			return copy;
+		}
+
+		return *this;
+	}
+
+	BigSignedInteger BigSignedInteger::operator+() const
+	{
+		if ( this->sign == true )
+		{
+			BigSignedInteger copy( *this );
+
+			copy.sign = false;
+
+			return copy;
+		}
+
+		return *this;
+	}
+
+	BigSignedInteger operator+( const BigSignedInteger& lhs, const BigSignedInteger& rhs )
+	{
+		BigSignedInteger result;
+		if ( lhs.IsNegative() == rhs.IsNegative() )
+		{
+			result.sign = lhs.IsNegative();
+			result.uint_data = lhs.uint_data + rhs.uint_data;
+		}
+		else
+		{
+			if ( lhs.IsNegative() )
+			{
+				result.sign = lhs.uint_data > rhs.uint_data;
+			}
+			else
+			{
+				result.sign = lhs.uint_data < rhs.uint_data;
+			}
+			result.uint_data = lhs.uint_data.Difference( rhs.uint_data );
+		}
+		if ( result.uint_data.IsZero() )
+		{
+			result.sign = false;
+		}
+		return result;
+	}
+
+	BigSignedInteger operator-( const BigSignedInteger& lhs, const BigSignedInteger& rhs )
+	{
+		BigSignedInteger result;
+		if ( lhs.IsNegative() != rhs.IsNegative() )
+		{
+			result.sign = lhs.IsNegative();
+			result.uint_data = lhs.uint_data + rhs.uint_data;
+		}
+		else
+		{
+			if ( lhs.IsNegative() )
+			{
+				result.sign = lhs.uint_data > rhs.uint_data;
+			}
+			else
+			{
+				result.sign = lhs.uint_data < rhs.uint_data;
+			}
+			result.uint_data = lhs.uint_data.Difference( rhs.uint_data );
+		}
+		if ( result.uint_data.IsZero() )
+		{
+			result.sign = false;
+		}
+		return result;
+	}
+
+	BigSignedInteger operator*( const BigSignedInteger& lhs, const BigSignedInteger& rhs )
+	{
+		BigSignedInteger result;
+		result.uint_data = lhs.uint_data * rhs.uint_data;
+		if ( result.uint_data.IsZero() )
+		{
+			result.sign = false;
+		}
+		else
+		{
+
+			result.sign = lhs.IsNegative() != rhs.IsNegative();
+		}
+		return result;
+	}
+
+	BigSignedInteger operator/( const BigSignedInteger& lhs, const BigSignedInteger& rhs )
+	{
+		BigSignedInteger result;
+		result.uint_data = lhs.uint_data / rhs.uint_data;
+		if ( result.uint_data.IsZero() )
+		{
+			result.sign = false;
+		}
+		else
+		{
+
+			result.sign = lhs.IsNegative() != rhs.IsNegative();
+		}
+		return result;
+	}
+
+	BigSignedInteger operator%( const BigSignedInteger& lhs, const BigSignedInteger& rhs )
+	{
+		BigSignedInteger result;
+		result.uint_data = lhs.uint_data % rhs.uint_data;
+		if ( result.uint_data.IsZero() )
+		{
+			result.sign = false;
+		}
+		else
+		{
+
+			result.sign = lhs.IsNegative() != rhs.IsNegative();
+		}
+		return result;
+	}
+
+	BigSignedInteger& BigSignedInteger::operator=( const BigSignedInteger& other ) noexcept
+	{
+		this->sign = other.sign;
+		this->uint_data = other.uint_data;
+		return *this;
+	}
+
+	BigSignedInteger& BigSignedInteger::operator=( BigSignedInteger&& other ) noexcept
+	{
+		this->sign = other.sign;
+		this->uint_data = std::move( other.uint_data );
+		return *this;
+	}
+
+	BigSignedInteger& BigSignedInteger::operator+=( const BigSignedInteger& other )
+	{
+		*this = *this + other;
+		return *this;
+	}
+
+	BigSignedInteger& BigSignedInteger::operator-=( const BigSignedInteger& other )
+	{
+		*this = *this - other;
+		return *this;
+	}
+
+	BigSignedInteger& BigSignedInteger::operator*=( const BigSignedInteger& other )
+	{
+		*this = *this * other;
+		return *this;
+	}
+
+	BigSignedInteger& BigSignedInteger::operator/=( const BigSignedInteger& other )
+	{
+		*this = *this / other;
+		return *this;
+	}
+
+	BigSignedInteger& BigSignedInteger::operator%=( const BigSignedInteger& other )
+	{
+		*this = *this % other;
+		return *this;
+	}
+
+	BigSignedInteger BigSignedInteger::operator&( const BigSignedInteger& other ) const
+	{
+		return BigSignedInteger( this->uint_data & other.uint_data );
+	}
+
+	BigSignedInteger& BigSignedInteger::operator&=( const BigSignedInteger& other )
+	{
+		return *this = *this & other;
+	}
+
+	BigSignedInteger BigSignedInteger::operator|( const BigSignedInteger& other ) const
+	{
+		return BigSignedInteger( this->uint_data | other.uint_data );
+	}
+
+	BigSignedInteger& BigSignedInteger::operator|=( const BigSignedInteger& other )
+	{
+		return *this = *this | other;
+	}
+
+	BigSignedInteger BigSignedInteger::operator~() const
+	{
+		return ~uint_data;
+	}
+
+	BigSignedInteger BigSignedInteger::operator^( const BigSignedInteger& other ) const
+	{
+		return BigSignedInteger( this->uint_data ^ other.uint_data );
+	}
+
+	BigSignedInteger& BigSignedInteger::operator^=( const BigSignedInteger& other )
+	{
+		return *this = *this ^ other;
+	}
+
+	BigSignedInteger& BigSignedInteger::operator<<=( size_t shift )
+	{
+		uint_data = uint_data.LeftShiftBit(shift);
+		if ( uint_data.IsZero() )
+		{
+			sign = false;
+		}
+		return *this;
+	}
+
+	BigSignedInteger& BigSignedInteger::operator>>=( size_t shift )
+	{
+		uint_data = uint_data.RightShiftBit(shift);
+		if ( uint_data.IsZero() )
+		{
+			sign = false;
+		}
+		return *this;
+	}
+
+	bool operator==( const BigSignedInteger& lhs, const BigSignedInteger& rhs )
+	{
+		return lhs.sign == rhs.sign && lhs.uint_data == rhs.uint_data;
+	}
+
+	bool operator!=( const BigSignedInteger& lhs, const BigSignedInteger& rhs )
+	{
+		return !( lhs == rhs );
+	}
+
+	bool operator>( const BigSignedInteger& lhs, const BigSignedInteger& rhs )
+	{
+		if ( lhs.IsNegative() != rhs.IsNegative() )
+		{
+			return rhs.IsNegative();
+		}
+		return lhs.IsNegative() != ( lhs.uint_data > rhs.uint_data );
+	}
+
+	bool operator>=( const BigSignedInteger& lhs, const BigSignedInteger& rhs )
+	{
+		return !( lhs < rhs );
+	}
+
+	bool operator<( const BigSignedInteger& lhs, const BigSignedInteger& rhs )
+	{
+		return rhs > lhs;
+	}
+
+	bool operator<=( const BigSignedInteger& lhs, const BigSignedInteger& rhs )
+	{
+		return !( lhs > rhs );
+	}
+
+	void BigSignedInteger::EGCD( BigSignedInteger a, BigSignedInteger b, BigSignedInteger& gcd, BigSignedInteger& co1, BigSignedInteger& co2 )
+	{
+		if ( a < b )
+		{
+			BigSignedInteger::EGCD( b, a, gcd, co2, co1 );
+			return;
+		}
+		BigSignedInteger x( 1 ), x0( 0 );
+		BigSignedInteger y( 0 ), y0( 1 );
+
+		auto exec_func = []( BigSignedInteger& lhs, BigSignedInteger& rhs, const BigSignedInteger& k ) {
+			BigSignedInteger temp = std::move( rhs );
+			rhs = lhs - k * temp;
+			lhs = std::move( temp );
+		};
+		while ( b > 0 )
+		{
+			BigSignedInteger k = a / b;
+			exec_func( a, b, k );
+			exec_func( y, y0, k );
+			exec_func( x, x0, k );
+		}
+		gcd = std::move( a );
+		co1 = std::move( x );
+		co2 = std::move( y );
+	}
+
+	BigSignedInteger BigSignedInteger::ModuloArithmetic( ArithmeticMode mode, const BigSignedInteger& a, const BigSignedInteger& b, const BigSignedInteger& modulus )
+	{
+		if ( modulus.IsZero() )
+		{
+			throw std::invalid_argument( "The modulus cannot be zero!" );
+		}
+
+		BigSignedInteger temporary;
+
+		switch ( mode )
+		{
+		case ArithmeticMode::Addition:
+			temporary = a + b;
+			break;
+		case ArithmeticMode::Subtraction:
+			temporary = a - b;
+			break;
+		case ArithmeticMode::Multiplication:
+			temporary = a * b;
+			break;
+		case ArithmeticMode::Division:
+			if ( !b.IsZero() )
+			{
+				BigSignedInteger inverse = BigSignedInteger::ModuloInverse( b, modulus );
+				if ( !inverse.IsZero() )
+				{
+					temporary = a * inverse;
+				}
+				else
+				{
+					throw std::invalid_argument( "The b is not have multiplication inverse with modulo the modulus number, This mean (a * b) mod modulus_number != (a * inverse(b)) mod modulus_number" );
+				}
+			}
+			else
+			{
+				throw std::invalid_argument( "Division by zero!" );
+			}
+			break;
+		default:
+			throw std::invalid_argument( "Invalid modulo arithmetic mode!" );
+			break;
+		}
+
+		auto Modulo = []( const BigSignedInteger& number, const BigSignedInteger& modulus ) {
+			if ( number.IsZero() )
+			{
+				return BigSignedInteger( 0 );
+			}
+
+			BigSignedInteger result;
+
+			/*if ( modulus.IsPowerOfTwo() )
+			{
+				result = number & ( modulus - 1 );
+				result.Clean();
+				return result;
+			}*/
+
+			result = number % modulus;
+			return result;
+		};
+
+		return Modulo( temporary, modulus );
+	}
+
+	BigSignedInteger BigSignedInteger::ModuloInverse( const BigSignedInteger& a, const BigSignedInteger& b )
+	{
+		BigSignedInteger gcd, x, y;
+
+		EGCD( a, b, gcd, x, y );
+		return ( x % b + b ) % b;
+	}
+
+	size_t BigSignedInteger::SipHash( const BigSignedInteger& Integer, std::vector<uint8_t>* keys ) const
+	{
+		const BigInteger& UnInteger = Integer.uint_data;
+		return UnInteger.SipHash( UnInteger, keys );
+	}
+
+	/*
+	
+	Montgomery
+
+	*/
+
+	BigInteger Montgomery::GetR() const
+	{
+		return BigInteger::BasePowerN( modulo.Size() + 1 );
+	}
+
+	BigInteger Montgomery::ModuloR( const BigInteger& a ) const
+	{
+		return a.ModuloBasePower( radix_blocks );
+	}
+
+	BigInteger Montgomery::DivisionR( const BigInteger& a ) const
+	{
+		return a.RightShiftBlock( radix_blocks );
+	}
+
+	BigInteger Montgomery::ReduceLazy( const BigInteger& a ) const
+	{
+		BigInteger m = ModuloR( a ) * modulo_inverse_neg;
+		m = ModuloR( m );
+		m = DivisionR( a + m * modulo );
+		return m;
+	}
+
+	BigInteger Montgomery::Reduce( const BigInteger& a ) const
+	{
+		BigInteger m = ReduceLazy( a );
+		if ( m >= modulo )
+		{
+			m -= modulo;
+		}
+		return m;
+	}
+
+	Montgomery::Montgomery( const BigInteger& new_modulo ) : modulo( new_modulo ), modulo2( new_modulo * 2 )
+	{
+		radix = GetR();
+		radix_blocks = radix.Size() - 1;
+		modulo_inverse_neg = BigSignedInteger::ModuloInverse( modulo, radix );
+		modulo_inverse_neg = radix - modulo_inverse_neg;
+		radix %= modulo;
+		radix_square = radix * radix % modulo;
+	}
+
+	BigInteger Montgomery::ToInt( const BigInteger& a ) const
+	{
+		return Reduce( a );
+	}
+
+	BigInteger Montgomery::ToMontgomery( const BigInteger& a ) const
+	{
+		return Reduce( a * radix_square );
+	}
+
+	BigInteger Montgomery::Addtion( const BigInteger& a, const BigInteger& b ) const
+	{
+		BigInteger sum = a + b;
+		if ( sum >= modulo2 )
+		{
+			sum -= modulo2;
+		}
+		return sum;
+	}
+
+	BigSignedInteger Montgomery::Addtion( const BigSignedInteger& a, const BigSignedInteger& b ) const
+	{
+		return Addtion( BigInteger( a ), BigInteger( b ) );
+	}
+
+	BigInteger Montgomery::Substraction( const BigInteger& a, const BigInteger& b ) const
+	{
+		if ( a >= b )
+		{
+			return a - b;
+		}
+		return modulo2 - b + a;
+	}
+
+	BigSignedInteger Montgomery::Substraction( const BigSignedInteger& a, const BigSignedInteger& b ) const
+	{
+		return Substraction( BigInteger( a ), BigInteger( b ) );
+	}
+
+	BigInteger Montgomery::Multiplication( const BigInteger& a, const BigInteger& b ) const
+	{
+		return ReduceLazy( a * b );
+	}
+
+	BigSignedInteger Montgomery::Multiplication( const BigSignedInteger& a, const BigSignedInteger& b ) const
+	{
+		return ReduceLazy( a * b );
+	}
+
+	BigInteger Montgomery::Inverse( const BigInteger& a ) const
+	{
+		return Power( a, modulo - 2 );
+	}
+
+	BigSignedInteger Montgomery::Inverse( const BigSignedInteger& a ) const
+	{
+		return BigSignedInteger( Inverse( BigInteger( a ) ), a.IsNegative() );
+	}
+
+	BigInteger Montgomery::Power( BigInteger base, const BigInteger& index ) const
+	{
+		base = ToMontgomery( base );
+		size_t			 index_length = index.Size();
+		BigInteger		 result = radix;
+		constexpr size_t FOUR_ARY_THRESHOLD = 4;
+		if ( index_length <= FOUR_ARY_THRESHOLD )
+		{
+			size_t bits = index.BitLength();
+			for ( size_t i = 0; i < bits; i++ )
+			{
+				if ( index.GetBit( i ) )
+				{
+					result = Multiplication( result, base );
+				}
+				base = Multiplication( base, base );
+			}
+		}
+		else
+		{
+			constexpr int					   INDEX_BLOCK = 4;
+			constexpr size_t				   TABLE_SIZE = size_t( 1 ) << INDEX_BLOCK;
+			std::array<BigInteger, TABLE_SIZE> table { radix, base };
+			for ( size_t i = 2; i < table.size(); i++ )
+			{
+				table[ i ] = Multiplication( table[ i - 1 ], base );
+			}
+
+			size_t i = index_length;
+			while ( i > 0 )
+			{
+				i--;
+				const auto block = index.GetBlock( i );
+				size_t	   j = sizeof( block ) * CHAR_BIT;
+				while ( j > 0 )
+				{
+					j -= INDEX_BLOCK;
+					const auto sub_index = ( block >> j ) % TABLE_SIZE;
+					for ( size_t k = 0; k < INDEX_BLOCK; k++ )
+					{
+						result = Multiplication( result, result );
+					}
+					if ( sub_index > 0 )
+					{
+						result = Multiplication( result, table[ sub_index ] );
+					}
+				}
+			}
+		}
+		return ToInt( result );
+	}
+
+	BigSignedInteger Montgomery::Power( BigSignedInteger base, const BigInteger& index ) const
+	{
+		return Power( BigInteger( base ), BigInteger( index ) );
+	}
+
 }  // namespace TwilightDream::BigInteger

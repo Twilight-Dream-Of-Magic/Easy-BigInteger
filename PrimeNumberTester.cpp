@@ -1,3 +1,30 @@
+/*
+MIT License
+
+Copyright (c) 2024 Twilight-Dream & With-Sky
+
+https://github.com/Twilight-Dream-Of-Magic/
+https://github.com/With-Sky
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
 #include "PrimeNumberTester.hpp"
 
 namespace TwilightDream
@@ -76,13 +103,13 @@ namespace TwilightDream
 		if ( n <= r )
 			return true;
 
-		// Step 5: check that for every coeficient (a_{i}) in (x-1)^{n} a_{i} mod n == 0
-		// https://fishi.devtail.io/weblog/2015/06/25/computing-large-binomial-coefficients-modulo-prime-non-prime/
-		// For a = 1, a to floor(sqrt(φ(r))) * log2(n) do
-		// {
-		//		if ((X + a)^{n} != X^{n} + a (mod X^{r} − 1, n))
-		//			output COMPOSITE;
-		// }
+			// Step 5: check that for every coeficient (a_{i}) in (x-1)^{n} a_{i} mod n == 0
+			// https://fishi.devtail.io/weblog/2015/06/25/computing-large-binomial-coefficients-modulo-prime-non-prime/
+			// For a = 1, a to floor(sqrt(φ(r))) * log2(n) do
+			// {
+			//		if ((X + a)^{n} != X^{n} + a (mod X^{r} − 1, n))
+			//			output COMPOSITE;
+			// }
 
 #if 1
 
@@ -196,8 +223,8 @@ namespace TwilightDream
 		for ( size_t i = 0; i < k; ++i )
 		{
 			// Generate random integer a, where 2 <= a <= (n - 2)
-			const BigInteger a = BigInteger::RandomGenerateNBit( n.BitSize() );
-			x = TWO + ( a % RangeInteger );
+			const BigInteger a = BigInteger::RandomGenerateNBit( n.BitLength() + 1 );
+			x = a % RangeInteger + TWO;
 
 			x.PowerWithModulo( d, n );
 
@@ -257,90 +284,48 @@ namespace TwilightDream
 			return false;
 
 		const BigInteger n_minus_one = n - ONE;
-		const BigInteger n_minus_two = n - TWO;
 		BigInteger		 x = ZERO;
 
-		bool TryAgain = false;
+		auto generate_random_number_with_range = []( const BigInteger& start, const BigInteger& end )
+		{
+			BigInteger range = end - start;
+			BigInteger result = BigInteger::RandomGenerateNBit( range.BitLength() + 1 );
+			return result % range + start;
+		};
 
 		// Decompose (n - 1) to write it as (2 ** s) * d
 		// While d is even, divide it by 2 and increase the exponent.
-		BigInteger d = n_minus_one;
-		size_t	   s = 0;
-		while ( d.IsEven() )
-		{
-			++s;
-			d >>= 1;
-		}
-
-		// Initialize variables for Montgomery multiplication
-		size_t	   rsize = n.values.size();
-		BigInteger r, rinv = 1, mprime = 0;
-
-		mprime.values.resize( n.values.size() );
-		r.values.resize( rsize > 1 ? rsize : 2 );
-		r.values[ 1 ] = 1;
-
-		// Set up Montgomery parameters
-		for ( size_t i = 0; i < rsize - 1; ++i )
-		{
-			r <<= TwilightDream::BigInteger::EXPONENT;
-		}
-
-		for ( size_t i = 0; i < rsize * TwilightDream::BigInteger::EXPONENT; ++i )
-		{
-			if ( ( rinv[ 0 ] & 1 ) == 0 )
-			{
-				rinv >>= 1;
-				mprime >>= 1;
-			}
-			else
-			{
-				rinv.Add( n );
-				rinv >>= 1;
-				if ( i != 0 )
-					mprime >>= 1;
-				mprime.SetBit( rsize * TwilightDream::BigInteger::EXPONENT - 1 );
-			}
-		}
-
-		const BigInteger RangeInteger = n_minus_two - TWO + ONE;
+		BigInteger s = n_minus_one;
+		size_t	   t = s.CountTrailingZeros();
+		s >>= t;
 
 		// Perform Miller-Rabin test with Montgomery multiplication
 		// Test k witnesses.
-		for ( size_t i = 0; i < k; ++i )
+
+		BigInteger range_integer = n_minus_one;
+		TwilightDream::BigInteger::Montgomery montgomery( n );
+		for ( size_t count = 0; count < k; count++ )
 		{
 			// Generate random integer a, where 2 <= a <= (n - 2)
-			const BigInteger a = BigInteger::RandomGenerateNBit( n.BitSize() );
-			x = TWO + ( a % RangeInteger );
-
-			x.MontgomeryPower( d, n, mprime, r, rsize );
-
-			if ( x == ONE || x == n_minus_one )
+			BigInteger x = generate_random_number_with_range( 2, range_integer );
+			x = montgomery.Power( x, s );
+			if ( x != 1 )
 			{
-				continue;
-			}
-
-			for ( size_t r = 0; r < s; ++r )
-			{
-				x.PowerWithModulo( 2, n );
-
-				if ( x == ONE )
+				size_t i = 0;
+				while ( x != range_integer )
 				{
-					return false;
-				}
-				else if ( x == n_minus_one )
-				{
-					TryAgain = true;
-					break;
+					if ( i == t - 1 )
+					{
+						return false;
+					}
+					else
+					{
+						i++;
+						x = x * x % n;
+					}
 				}
 			}
-
-			//x != n_minus_one
-			if ( !TryAgain )
-				return false;
-			TryAgain = false;
 		}
-
 		return true;
 	}
 
@@ -394,7 +379,7 @@ namespace TwilightDream
 			return false;
 		}
 
-		size_t bit_size = Number.BitSize();
+		size_t bit_size = Number.BitLength();
 		/*
 			Returns minimum number of rounds for Miller-Rabing primality testing, on number bitsize.
 

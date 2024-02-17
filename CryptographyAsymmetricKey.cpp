@@ -1,3 +1,30 @@
+/*
+MIT License
+
+Copyright (c) 2024 Twilight-Dream & With-Sky
+
+https://github.com/Twilight-Dream-Of-Magic/
+https://github.com/With-Sky
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
 #include "CryptographyAsymmetricKey.hpp"
 
 namespace TwilightDream::CryptographyAsymmetric
@@ -40,7 +67,7 @@ namespace TwilightDream::CryptographyAsymmetric
 	std::optional<RSA::FindPrimeState> RSA::GeneratePrimesInParallelFunctions(size_t bit_count)
 	{
 		std::vector<std::future<void>> futures;
-		const size_t				   max_thread_count = 2; //std::thread::hardware_concurrency();
+		const size_t				   max_thread_count = 4; //std::thread::hardware_concurrency();
 		std::vector<FindPrimeState>	   prime_map( max_thread_count, FindPrimeState() );
 
 		for ( size_t i = 0; i < prime_map.size(); ++i )
@@ -89,8 +116,8 @@ namespace TwilightDream::CryptographyAsymmetric
 	RSA::BigInteger RSA::GeneratePrimeNumber( size_t bit_count )
 	{
 		this->bit_count = bit_count;
-		MIN = BigInteger(2).Power(bit_count);
-		MAX = BigInteger(2).Power(bit_count + 1) - ONE;
+		MIN = BigInteger(2).Power(bit_count); // MIN: 2^{bit\_count}
+		MAX = BigInteger(2).Power(bit_count + 1) - ONE; // MAX: 2^{bit\_count + 1} - 1
 		RANGE_INTEGER = MAX - MIN + ONE;
 
 		if(this->bit_count == 0)
@@ -129,6 +156,12 @@ namespace TwilightDream::CryptographyAsymmetric
 
 		// Calculate totient(n) = phi(n) = (p - 1) * (q - 1)
 		BigInteger Totient_PhiFunctionValue = (PrimeNumberA - ONE) * (PrimeNumberB - ONE);
+		
+		//std::cout << "---------------------------------------------------------------------------------------------------\n";
+		//std::cout << "RSA Algorithm: Number Prime A is: " << PrimeNumberA.ToString(10) << "\n\n";
+		//std::cout << "RSA Algorithm: Number Prime B is: " << PrimeNumberB.ToString(10) << "\n\n";
+		//std::cout << "RSA Algorithm: Number Modulus is: " << AlgorithmModulus.ToString(10) << "\n\n";
+		//std::cout << "RSA Algorithm: Number Totient_PhiFunctionValue is: " << Totient_PhiFunctionValue.ToString(10) << "\n\n\n";
 
 		BigInteger EncryptExponent = 0;
 		//Enable security and performance optimization?
@@ -136,17 +169,16 @@ namespace TwilightDream::CryptographyAsymmetric
 			EncryptExponent = 65537;
 		else
 		{
-			// Choosing exponents for RSA encryption
-			// encryption_exponents = RandomNumberRange(2, 2^{bit\_count} - 1)
-			do 
-			{
-				EncryptExponent = BigInteger::RandomGenerateNBit(bit_count / 2);
+			BigInteger min = 2;
+			BigInteger max = (BigInteger {1} << bit_count - 1) - 1;
+			BigInteger range_integer = max - min + 1;
 
-				// Ensure that e is odd and greater than 1
-				if (EncryptExponent.IsEven() || EncryptExponent == ONE)
-				{
-					continue;
-				}
+			// Ensure that e is odd and greater than 2
+			while ( EncryptExponent <= 2 )
+			{
+				// Choosing exponents for RSA encryption
+				// encryption_exponents = RandomNumberRange(2, 2^{bit\_count} - 1)
+				EncryptExponent = BigInteger::RandomGenerateNBit(bit_count + 1) % range_integer + min;
 
 				// Check if e is not 3
 				// encryption_exponents equal 3 is not safe
@@ -155,23 +187,40 @@ namespace TwilightDream::CryptographyAsymmetric
 					continue;
 				}
 
-				// Check if gcd(e, totient(n)) = 1
+				if(EncryptExponent.IsEven())
+				{
+					EncryptExponent.SetBit(0);
+				}
+			}
+
+			// Check if gcd(e, totient(n)) = 1, result is false then repeat this loop.
+			do 
+			{
 				if (BigInteger::GCD(EncryptExponent, Totient_PhiFunctionValue) != ONE)
 				{
+					EncryptExponent += TWO;
+					//std::cout << "Updated Temporary Number EncryptExponent is:" << EncryptExponent.ToString(10) << "\n";
 					continue;
 				}
 
 				break;
 			} while (true);
+
+			//std::cout << "The large odd number EncryptExponent is computed." << "\n";
 		}
 
 		// Choosing exponents for RSA decryption
 		// Need calculate d such that decryption_exponents = encryption_exponents^{-1} (mod totient(n))
-		BigInteger DecryptExponent = BigInteger::ModuloInverse(EncryptExponent, Totient_PhiFunctionValue);
+		BigSignedInteger DecryptExponent = BigSignedInteger::ModuloInverse(EncryptExponent, Totient_PhiFunctionValue);
+
+		//std::cout << "The large odd number DecryptExponent is computed." << "\n\n\n";
+		//std::cout << "RSA Algorithm: EncryptExponent is: " << EncryptExponent.ToString(10) << "\n\n";
+		//std::cout << "RSA Algorithm: DecryptExponent is: " << DecryptExponent.ToString(10) << "\n\n";
+		//std::cout << "---------------------------------------------------------------------------------------------------\n";
 
 		RSA::RSA_AlgorithmNumbers AlgorithmNumbers = RSA::RSA_AlgorithmNumbers();
 		AlgorithmNumbers.EncryptExponent = EncryptExponent;
-		AlgorithmNumbers.DecryptExponent = DecryptExponent;
+		AlgorithmNumbers.DecryptExponent = static_cast<BigInteger>(DecryptExponent);
 		AlgorithmNumbers.AlgorithmModulus = AlgorithmModulus;
 
 		return AlgorithmNumbers;

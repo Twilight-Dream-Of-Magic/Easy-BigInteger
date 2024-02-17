@@ -1,10 +1,37 @@
+/*
+MIT License
+
+Copyright (c) 2024 Twilight-Dream & With-Sky
+
+https://github.com/Twilight-Dream-Of-Magic/
+https://github.com/With-Sky
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
 #pragma once
 
 #include "BigInteger.hpp"
 #include <array>
 
 #ifndef USE_BIG_INTEGER_ARITHMATIC_VERSION
-//#define USE_BIG_INTEGER_ARITHMATIC_VERSION
+#define USE_BIG_INTEGER_ARITHMATIC_VERSION
 #endif
 
 struct BinaryCipher
@@ -37,15 +64,27 @@ struct BinaryCipher
 		std::cout << "################ BinaryCipher Test ################\n" << std::endl;
 
 		const std::bitset<256> Bitset256SizeZero = std::bitset<256>();
-		BigInteger BitsKey = BigInteger::BigInteger( Bitset256SizeZero );
+		BigInteger BitsKey = BigInteger( Bitset256SizeZero );
 		BitsKey.SetBit( 255 );
 
-		BigInteger BitsExpansionKey = BigInteger::BigInteger( Bitset512SizeZero );
+		BigInteger BitsExpansionKey = BigInteger( Bitset512SizeZero );
 		KeyExpansion( BitsKey, BitsExpansionKey );
 
 
 
-		BigInteger BitsPlainData = BigInteger::BigInteger( Bitset512SizeZero );
+		BigInteger BitsPlainData = BigInteger( Bitset512SizeZero );
+
+		//Fibonacci Loop
+		size_t a = 0;
+		size_t b = 1;
+
+		while (a + b < 512)
+		{
+			size_t next = a + b;
+			BitsPlainData.SetBit(next - 1);
+			a = b;
+			b = next;
+		}
 
 		std::cout << "MatserKey: " << BitsKey.ToBinaryString(512) << std::endl;
 		std::cout << "ExpansionKey: " << BitsExpansionKey.ToBinaryString(512) << std::endl;
@@ -85,6 +124,18 @@ struct BinaryCipherNaive
 		KeyExpansion( BitsKey, BitsExpansionKey );
 
 		std::bitset<512> BitsPlainData;
+
+		//Fibonacci Loop
+		size_t a = 0;
+		size_t b = 1;
+
+		while (a + b < 512)
+		{
+			size_t next = a + b;
+			BitsPlainData.set(next - 1);
+			a = b;
+			b = next;
+		}
 
 		std::cout << "MatserKey: " << BitsKey << std::endl;
 		std::cout << "ExpansionKey: " << BitsExpansionKey << std::endl;
