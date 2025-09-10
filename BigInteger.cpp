@@ -173,6 +173,9 @@ namespace TwilightDream::BigInteger
 		const size_t this_size = values.size();
 		const size_t other_size = other.values.size();
 
+		// Ensure destination has enough capacity for in-place subtraction
+		values.resize( std::max( this_size, other_size ) );
+
 		// Perform subtraction for each digit
 		HyperInt::Arithmetic::abs_sub_binary( values.data(), this_size, other.values.data(), other_size, values.data() );
 
