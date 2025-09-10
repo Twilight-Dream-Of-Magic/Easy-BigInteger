@@ -173,9 +173,19 @@ namespace TwilightDream::BigInteger
 		const size_t this_size = values.size();
 		const size_t other_size = other.values.size();
 
+		// If this_size < other_size, *this < other
+		if ( this_size < other_size )
+		{
+			throw std::invalid_argument( "Result of unsigned subtraction can't be negative." );
+		}
 		// Perform subtraction for each digit
-		HyperInt::Arithmetic::abs_sub_binary( values.data(), this_size, other.values.data(), other_size, values.data() );
+		bool borrow = HyperInt::Arithmetic::abs_sub_binary( values.data(), this_size, other.values.data(), other_size, values.data() );
 
+		// If borrow == true, *this < other
+		if (borrow)
+		{
+			throw std::invalid_argument( "Result of unsigned subtraction can't be negative." );
+		}
 		// Remove leading zeros and resize the storage
 		Clean();
 

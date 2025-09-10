@@ -1757,8 +1757,9 @@ namespace HyperInt
 
 		// Binary absolute subtraction a-b=diff, return the borrow
 		template <typename UintTy>
-		constexpr bool abs_sub_binary(const UintTy a[], size_t len_a, const UintTy b[], size_t len_b, UintTy diff[], bool assign_borow = false)
+		constexpr bool abs_sub_binary(const UintTy a[], size_t len_a, const UintTy b[], size_t len_b, UintTy diff[])
 		{
+			assert(len_a >= len_b);// Avoid out of range access
 			bool   borrow = false;
 			size_t i = 0, min_len = std::min(len_a, len_b);
 			for (; i < min_len; i++)
@@ -1772,10 +1773,6 @@ namespace HyperInt
 			for (; i < len_b; i++)
 			{
 				diff[i] = sub_half(UintTy(0) - UintTy(borrow), b[i], borrow);
-			}
-			if (assign_borow)
-			{
-				diff[i] = UintTy(borrow);  // 借位
 			}
 			return borrow;
 		}

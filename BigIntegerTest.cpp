@@ -569,9 +569,34 @@ namespace TwilightDream::BigInteger::Test
 		a = 0;
 		std::cout << a.Size() << "\n";
 		std::cout << "--------------------------------------\n";
-
+		a = 1;
 		a >>= 1;
 		std::cout << std::boolalpha << ( a == 0 ) << '\n';
+	}
+
+	inline void test_sub_result_neg()
+	{
+		BigInteger a = 1;
+		std::cout << a.ToString() << std::endl;
+		a = a >> 1;
+		std::cout << a.ToString() << std::endl;
+		try
+		{
+			a = a - 10;
+		}
+		catch (std::invalid_argument e)
+		{
+			std::cout << e.what() << std::endl;
+		}
+		a = 9;
+		try
+		{
+			a = a - 10;
+		}
+		catch ( std::invalid_argument e )
+		{
+			std::cout << e.what() << std::endl;
+		}
 	}
 
 	void test_all()
@@ -599,5 +624,6 @@ namespace TwilightDream::BigInteger::Test
 		test_prime();
 		test_signed_division();
 		test_compare();
+		test_sub_result_neg();
 	}
 }  // namespace TwilightDream::BigInteger::Test
