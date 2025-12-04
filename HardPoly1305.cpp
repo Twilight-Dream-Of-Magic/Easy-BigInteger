@@ -25,11 +25,25 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-#include <iomanip>
-#include <cassert>
 #include "HardPoly1305.hpp"
 
-std::vector<uint8_t> SubByteArray( const std::vector<uint8_t>& data, ptrdiff_t start, ptrdiff_t end, ptrdiff_t step = 1 )
+#include <algorithm>
+#include <cassert>
+#include <iomanip>
+#include <iostream>
+#include <random>
+#include <sstream>
+
+using BigSignedInteger = TwilightDream::BigInteger::BigSignedInteger;
+
+// ---------------------------------------------------------------------
+// 工具函数实现
+// ---------------------------------------------------------------------
+
+std::vector<uint8_t> SubByteArray( const std::vector<uint8_t>& data,
+								   ptrdiff_t start,
+								   ptrdiff_t end,
+								   ptrdiff_t step )
 {
 	if ( step == 0 )
 	{
@@ -59,14 +73,28 @@ std::vector<uint8_t> SubByteArray( const std::vector<uint8_t>& data, ptrdiff_t s
 	if ( step > 0 )
 	{
 		auto first = data.begin() + start;
-		auto last = data.begin() + end;
-		std::copy_if( first, last, std::back_inserter( sub_array ), [ n = 0, step ]( const uint8_t& ) mutable { return n++ % step == 0; } );
+		auto last  = data.begin() + end;
+		std::copy_if(
+			first,
+			last,
+			std::back_inserter( sub_array ),
+			[ n = 0, step ]( const uint8_t& ) mutable
+			{
+				return n++ % step == 0;
+			} );
 	}
 	else
 	{
 		auto first = data.rbegin() + ( dataSize - end );
-		auto last = data.rbegin() + ( dataSize - start );
-		std::copy_if( first, last, std::back_inserter( sub_array ), [ n = 0, step ]( const uint8_t& ) mutable { return n++ % -step == 0; } );
+		auto last  = data.rbegin() + ( dataSize - start );
+		std::copy_if(
+			first,
+			last,
+			std::back_inserter( sub_array ),
+			[ n = 0, step ]( const uint8_t& ) mutable
+			{
+				return n++ % -step == 0;
+			} );
 	}
 
 	return sub_array;
@@ -84,10 +112,10 @@ std::string BytesToHexString( const std::vector<uint8_t>& bytes )
 
 std::vector<uint8_t> generate_random_bytes( size_t size )
 {
-	std::vector<uint8_t>			bytes( size );
-	std::random_device				rd;
-	std::mt19937					gen( rd() );
-	std::uniform_int_distribution<> dis( 0, 255 );
+	std::vector<uint8_t>		  bytes( size );
+	std::random_device			  rd;
+	std::mt19937				  gen( rd() );
+	std::uniform_int_distribution dis( 0, 255 );
 	for ( size_t i = 0; i < size; ++i )
 	{
 		bytes[ i ] = static_cast<uint8_t>( dis( gen ) );
@@ -95,80 +123,170 @@ std::vector<uint8_t> generate_random_bytes( size_t size )
 	return bytes;
 }
 
-HardPoly1305::BigSignedInteger HardPoly1305::generate_unpredictable_value( const BigSignedInteger& hash_value, const BigSignedInteger& key )
+// ---------------------------------------------------------------------
+// [Sec 1.1] 从 master_key 派生 HardPoly1305KeyParams
+// ---------------------------------------------------------------------
+HardPoly1305KeyParams HardPoly1305::derive_key_parameters( const std::vector<uint8_t>& master_key ) const
 {
-	//std::cout << "\n--- generate_unpredictable_value ---\n";
-	//std::cout << "Initial hash_value: " << hash_value.ToString( 10 ) << '\n';
-	//std::cout << "Initial key: " << key.ToString( 10 ) << '\n';
-
-	const BigSignedInteger a = BigSignedInteger( hash_value ) + BigSignedInteger( key );
-	const BigSignedInteger b = BigSignedInteger( key ) - BigSignedInteger( hash_value );
-
-	// 复杂公式计算 alpha
-	BigSignedInteger alpha = ( ( a * a ) + ( b * b * b ) );
-	//std::cout << "Computed alpha: " << alpha.ToString( 10 ) << '\n';
-
-	// 应用 模数 p2
-	if ( alpha < 0 )
+	if ( master_key.size() < 32 )
 	{
-		//std::cout << "Alpha is negative: " << alpha.ToString( 10 ) << '\n';
-		alpha = p2 + alpha; //Adjustment of negative numbers to a positive range [0, p2]
-		//std::cout << "Adjusted alpha by adding p2: " << alpha.ToString( 10 ) << '\n';
-	}
-	if ( alpha >= p2 )
-	{
-		//std::cout << "Alpha exceeds p2: " << alpha.ToString( 10 ) << '\n';
-		alpha = alpha % p2;
-		//std::cout << "Alpha reduced modulo p2: " << alpha.ToString( 10 ) << '\n';
+		throw std::invalid_argument( "HardPoly1305 V2-Lite requires master_key >= 32 bytes" );
 	}
 
-	size_t key_bit_length = key.BitLength();
-	size_t hash_value_bit_length = hash_value.BitLength();
-	//std::cout << "key_bit_length: " << key_bit_length << '\n';
-	//std::cout << "hash_value_bit_length: " << hash_value_bit_length << '\n';
+	// 只取前 32 字节
+	std::vector<uint8_t> key32( master_key.begin(), master_key.begin() + 32 );
 
-	const BigSignedInteger& u0 = a;
-	//std::cout << "Computed u0 (hash_value + key): " << u0.ToString( 10 ) << '\n';
-	const BigSignedInteger u1 = hash_value - key;
-	//std::cout << "Computed u1 (hash_value - key): " << u1.ToString( 10 ) << '\n';
-	uint64_t		 left_shift_amount = ( u0 % key_bit_length ).ToUnsignedInt();
-	uint64_t		 right_shift_amount = ( u1 % hash_value_bit_length ).ToUnsignedInt();
-	BigSignedInteger u2 = key << left_shift_amount;
-	//std::cout << "Computed u2 (key << (u0 % key_bit_length)): " << u2.ToString( 10 ) << '\n';
-	BigSignedInteger u3 = hash_value >> right_shift_amount;
-	//std::cout << "hash_value_bit_length: " << hash_value_bit_length << "\n";
-	//std::cout << "right_shift_amount: " << right_shift_amount << "\n";
-	//std::cout << "Computed u3 (hash_value >> (u1 % hash_value_bit_length)): " << u3.ToString( 10 ) << '\n';
+	// k_h <- key[0:16] (LE) mod p
+	std::vector<uint8_t> key_lo( key32.begin(), key32.begin() + 16 );
+	std::vector<uint8_t> key_hi( key32.begin() + 16, key32.begin() + 32 );
 
-	BigSignedInteger u4 = hash_value * ( u2 + u3 + alpha );
-	//std::cout << "Computed u4 (hash_value * (u2 + u3 + alpha)): " << u4.ToString( 10 ) << '\n';
+	BigSignedInteger k_high; //Key Bit high part
+	BigSignedInteger k_low; //Key Bit low part (math : k_x)
+	BigSignedInteger k_mix;
+	BigSignedInteger k_mix2;
 
-	u4 = u4 % p;
-	//std::cout << "Final u4 modulo p: " << u4.ToString( 10 ) << '\n';
-	//std::cout << "--- End of generate_unpredictable_value ---\n";
+	k_high.ImportData( false, key_lo ); // little-endian
+	k_high %= p;
 
-	// 应用 模数 p 规约大小
-	return u4;
+	// k_x <- key[16:32] (LE) mod p
+	k_low.ImportData( false, key_hi );
+	k_low %= p;
+
+	// k_mix <- key[0:32] (LE) mod p2
+	k_mix.ImportData( false, key32 );
+	k_mix %= p2;
+
+	// k_mix2 = (3 * k_mix + GOLDEN_RATIO_CONST) mod p2
+	BigSignedInteger golden_const( "9E3779B97F4A7C15", 16 );
+	k_mix2 = ( k_mix * BigSignedInteger( 3 ) + golden_const ) % p2;
+
+	return HardPoly1305KeyParams( k_high, k_low, k_mix, k_mix2 );
 }
 
-std::vector<uint8_t> HardPoly1305::mix_key_and_message( const std::vector<uint8_t>& message, const std::vector<uint8_t>& key )
+// ---------------------------------------------------------------------
+// [Sec 1.4] h_core: u_i = h_core(h_{i-1}, X_i, params)
+//   1) F1 上的三次多项式 alpha
+//   2) 256-bit bit 域 + NOT-AND + ROTL_256(127) + XOR
+//   3) 回到 F2 上得到 u
+// ---------------------------------------------------------------------
+BigSignedInteger HardPoly1305::h_core(
+	const BigSignedInteger& hash_value,
+	const BigSignedInteger& block_value,
+	const HardPoly1305KeyParams& params ) const
 {
-	// Mix the message and key
+	// 1) F1 = Z_{p} 上的高次多项式 alpha
+	BigSignedInteger h_f1 = hash_value % p;
+	BigSignedInteger x_f1 = block_value % p;
+
+	//A = (h_f1 + x_f1 + params.k_h)^{2}
+	BigSignedInteger t1		= h_f1 + x_f1 + params.k_h;
+	BigSignedInteger t1_square = t1 * t1;
+
+	//B = (x_f1 - h_f1 + params.k_x)^{3}
+	BigSignedInteger t2		= x_f1 - h_f1 + params.k_x;
+	BigSignedInteger t2_cube = t2 * t2 * t2;
+
+	//C = A + B (mod PrimeNumber) 
+	BigSignedInteger alpha = ( t1_square + t2_cube ) % p;
+
+	// 2) bit 域 + ARX-like
+	// alpha_bits = C mod 2^{256}
+	// key_mix = params.k_mix mod 2^{256}
+	// key_mix2 = params.k_mix2 mod 2^{256}
+	BigSignedInteger alpha_bits = alpha & bit_256_mask;
+	BigSignedInteger key_mix			= params.k_mix & bit_256_mask;
+	BigSignedInteger key_mix2		= params.k_mix2 & bit_256_mask;
+
+	// NOT-AND: ~(alpha_bits & km2) & 2^256-1
+	BigSignedInteger t_and = alpha_bits & key_mix2;
+	BigSignedInteger t_not = ~t_and;
+	t_not &= bit_256_mask;
+
+	// tmp = km XOR t_not
+	BigSignedInteger tmp = key_mix ^ t_not;
+
+	// 256-bit 循环左移 127 位
+	BigSignedInteger tmp_left  = ( tmp << 127 ) & bit_256_mask;
+	BigSignedInteger tmp_right = tmp >> ( 256 - 127 );
+	BigSignedInteger rotated_left = tmp_left | tmp_right;
+
+	tmp ^= rotated_left;
+
+	// 3) 回到 F2 = Z_{p2}
+	// ARX-like (Modular Addition)
+	BigSignedInteger u = ( hash_value + tmp ) % p2;
+
+	return u;
+}
+
+// ---------------------------------------------------------------------
+// [Sec 1.5] derive_r_s_from_u: 从 256-bit u_i 导出 (r_i, s_i)
+//   - u 按小端导出为 32 字节：u_bytes[0:16] -> r_raw, [16:32] -> s_raw
+//   - r_i = clamp(r_raw)
+//   - s_i = s_raw & (2^128-1)
+// ---------------------------------------------------------------------
+void HardPoly1305::derive_r_s_from_u(
+	const BigSignedInteger& u_value,
+	BigSignedInteger& r_out,
+	BigSignedInteger& s_out ) const
+{
+	// 先限制到 256 bit
+	BigSignedInteger u_256 = u_value & bit_256_mask;
+
+	// 导出为 32 字节小端
+	std::vector<uint8_t> u_bytes;
+	bool				 is_negative = false;
+	u_256.ExportData( is_negative, u_bytes, 32, false );
+
+	// 低 16 字节 -> r_raw
+	std::vector<uint8_t> r_bytes( u_bytes.begin(), u_bytes.begin() + 16 );
+	BigSignedInteger		 r_raw;
+	r_raw.ImportData( false, r_bytes );
+	r_out = r_raw & clamp_bit_mask;
+
+	// 高 16 字节 -> s_raw
+	std::vector<uint8_t> s_bytes( u_bytes.begin() + 16, u_bytes.begin() + 32 );
+	BigSignedInteger		 s_raw;
+	s_raw.ImportData( false, s_bytes );
+
+	// s_i 只保留 128 bit: s_i = s_raw & (2^128 - 1)
+	BigSignedInteger mask128 = ( ( BigSignedInteger( 1 ) << 128 ) - BigSignedInteger( 1 ) );
+	s_out				 = s_raw & mask128;
+}
+
+// ---------------------------------------------------------------------
+// [Sec 1.2] 消息 & 密钥混合：mixed(M, K)
+// ---------------------------------------------------------------------
+std::vector<uint8_t> HardPoly1305::mix_key_and_message( const std::vector<uint8_t>& message,
+														const std::vector<uint8_t>& key )
+{
+	if ( key.empty() )
+	{
+		throw std::invalid_argument( "HardPoly1305::mix_key_and_message: key must not be empty" );
+	}
+	if ( key.size() < 32 )
+	{
+		throw std::invalid_argument( "HardPoly1305::mix_key_and_message: key length must be >= 32" );
+	}
+
 	std::vector<uint8_t> mixed_data( message.size(), 0 );
-	size_t				 key_index = 0;
+	size_t				  key_index = 0;
 
 	for ( size_t i = 0; i < message.size(); ++i )
 	{
-		mixed_data[ i ] = ( message[ i ] + key[ key_index ] ) % 256;
-		key_index = ( key_index + 1 ) % key.size();
+		mixed_data[ i ] = static_cast<uint8_t>( ( message[ i ] + key[ key_index ] ) & 0xFF );
+		++key_index;
+		if ( key_index == key.size() )
+		{
+			key_index = 0;
+		}
 	}
 
-	if ( mixed_data.size() < 32 )
+	// 保证“纠缠长度”至少 32 字节：如果 mixed < 32，则补 key[mixed_len:]
+	if ( mixed_data.size() < 32 && key.size() > mixed_data.size() )
 	{
-		//mixed_data = mixed_data concatenation key
-
-		mixed_data.reserve( 32 );
-		for ( size_t i = mixed_data.size(); i < key.size(); i++ )
+		size_t start = mixed_data.size();
+		for ( size_t i = start; i < key.size(); ++i )
 		{
 			mixed_data.push_back( key[ i ] );
 		}
@@ -177,147 +295,129 @@ std::vector<uint8_t> HardPoly1305::mix_key_and_message( const std::vector<uint8_
 	return mixed_data;
 }
 
-std::vector<uint8_t> HardPoly1305::hard_poly1305_core( const std::vector<uint8_t>& mixed_data, const std::vector<uint8_t>& key )
+// ---------------------------------------------------------------------
+// [Sec 1.6] HardPoly1305 V2-Lite 主算法
+//
+// 输入：
+//   mixed_data = mixed(message, key)   （先调用 mix_key_and_message）
+//   key        = master_key (>= 32 bytes)
+//
+// 流程：
+//   1) params = derive_key_parameters(key)
+//   2) 将 mixed_data 按 16 字节分块，每块编码 X_i = LE(block || 0x01)
+//   3) h_0 = 0; 对每个块：
+//        u_i        = h_core(h_{i-1}, X_i, params)
+//        (r_i,s_i)  = derive_r_s_from_u(u_i)
+//        h_i        = r_i * (h_{i-1}+X_i) + s_i (mod p)
+//   4) tag = h_t mod 2^128，以 16 字节小端返回
+// ---------------------------------------------------------------------
+std::vector<uint8_t> HardPoly1305::hard_poly1305_core( const std::vector<uint8_t>& mixed_data,
+													   const std::vector<uint8_t>& key )
 {
-	// 初始化混合消息状态
-	BigSignedInteger mixed_number = 0;
-
-	// 获取中间字节部分的密钥
-	BigSignedInteger key_number = 0;
-	key_number.ImportData( false, SubByteArray( key, 7, 23 ) );
-	std::cout << "\n--- hard_poly1305_core ---\n";
-	std::cout << "Initial key_number (from key[7:23]): " << key_number.ToString( 10 ) << '\n';
-	key_number *= 5;
-	std::cout << "After multiplying by 5, key_number: " << key_number.ToString( 10 ) << '\n';
-
-	// 初始化(Aaccumulator) hash_value 为 0
-	BigSignedInteger hash_value = 0;
-
-	// 初始化秘密状态 Secret status
-	r.ImportData( false, SubByteArray( key, 0, 15 ) );
-	s.ImportData( false, SubByteArray( key, 16, 31 ) );
-	std::cout << "Initial r: ";
-	r.Print( 10 );
-	std::cout << "Initial s: ";
-	s.Print( 10 );
-
-	// 计算 loop_count
-	size_t loop_count = ( mixed_data.size() + 15 ) / 16 + 1;
-	//std::cout << "Total loop_count: " << loop_count << '\n';
-
-	BigSignedInteger mixed_data_number = 0;
-	mixed_data_number.ImportData( false, mixed_data );
-	//std::cout << "Initial mixed_data_number : ";
-	mixed_data_number.Print( 10 );
-	std::vector<uint8_t> mixed_data_span;
-
-	// HardPoly1305 算法核心计算循环
-	for ( size_t i = 1; i <= loop_count - 1; ++i )
+	if ( key.size() < 32 )
 	{
-		//std::cout << "\n--- Loop " << i << " ---\n";
-
-		// 将 r 进行 clamp
-		r &= clamp_bit_mask;
-		//std::cout << "Clamped r: " << r.ToString( 10 ) << '\n';
-
-		// 获取 mixed_data 的字节切片
-		mixed_data_span = SubByteArray( mixed_data, ( i - 1 ) * 16, i * 16 );
-
-		// 重新分配 bytes 大小并拼接 Byte 0x01
-		mixed_data_span.push_back( 0x01 );
-
-		// 打印 mixed_data_span 的16进制表示
-		//std::cout << "Mixed data span (hex): " << BytesToHexString( mixed_data_span ) << '\n';
-
-		// 计算 mixed_number
-		mixed_number.ImportData( false, mixed_data_span );
-		//std::cout << "Computed mixed_number from mixed_data_span: " << mixed_number.ToString( 10 ) << '\n';
-
-		// 更新 hash_value
-		hash_value += mixed_number;
-		//std::cout << "Updated hash_value after adding mixed_number: " << hash_value.ToString( 10 ) << '\n';
-
-		// 首先 应用 秘密部分 r 进行倍增 然后 应用 模数 p
-		hash_value = ( r * hash_value ) % p;
-		//std::cout << "Updated hash_value after multiplying by r and mod p: " << hash_value.ToString( 10 ) << '\n';
-
-		// 最后 应用 秘密部分 s
-		hash_value += s;
-		//std::cout << "Updated hash_value after adding s: " << hash_value.ToString( 10 ) << '\n';
-
-		// 更新秘密状态 r 和 s
-		r = generate_unpredictable_value( hash_value, mixed_number );
-		s = generate_unpredictable_value( hash_value, key_number );
+		throw std::invalid_argument( "HardPoly1305::hard_poly1305_core: key length must be >= 32" );
 	}
 
-	// 规约大小 hash = hash (mod 2^128)
-	hash_value = hash_value % hash_max_number;
-	std::cout << "\nFinal hash_value mod 2^128: " << hash_value.ToString( 10 ) << '\n';
-	std::cout << "--- End of hard_poly1305_core ---\n";
+	// [Sec 1.1] 派生内部参数
+	HardPoly1305KeyParams params = derive_key_parameters( key );
 
-	// 返回结果
-	std::vector<uint8_t> hash_result;
+	// [Sec 1.6] 迭代 Poly1305 形状的随机系数多项式 MAC
+	BigSignedInteger hash_value = 0; // h_0 = 0
+
+	const size_t total_len = mixed_data.size();
+
+	for ( size_t offset = 0; offset < total_len; offset += 16 )
+	{
+		// 当前块的 [offset, offset+16)，不足 16 的最后一块如实取长度
+		ptrdiff_t start = static_cast<ptrdiff_t>( offset );
+		ptrdiff_t end   = static_cast<ptrdiff_t>( std::min( offset + 16, total_len ) );
+
+		std::vector<uint8_t> block_bytes = SubByteArray( mixed_data, start, end, 1 );
+		block_bytes.push_back( 0x01 ); // encode_block_with_one: append 0x01 (little endian high bit)
+
+		// LE 导入为整数 X_i
+		BigSignedInteger block_value;
+		block_value.ImportData( false, block_bytes );
+
+		// u_i = h_core(h_{i-1}, X_i, params)
+		BigSignedInteger u_value = h_core( hash_value, block_value, params );
+
+		// (r_i, s_i) 从 u_i 导出
+		BigSignedInteger r_i;
+		BigSignedInteger s_i;
+		derive_r_s_from_u( u_value, r_i, s_i );
+
+		// h_i = r_i * (h_{i-1} + X_i) + s_i (mod p)
+		BigSignedInteger hash_plus_block = ( hash_value + block_value ) % p;
+		hash_value					= ( r_i * hash_plus_block + s_i ) % p;
+	}
+
+	// 截断到 128 bit：tag = h_t mod 2^128
+	BigSignedInteger tag_value = hash_value % hash_max_number;
+
+	std::vector<uint8_t> tag_bytes;
 	bool				 is_negative = false;
-	hash_value.ExportData( is_negative, hash_result, 16 );
+	tag_value.ExportData( is_negative, tag_bytes, 16, false ); // 16 字节小端
 
-	std::cout << "Final Tag/Hash Bytes Data:\n";
-	for ( const auto& byte : hash_result )
-	{
-		std::cout << std::hex << std::setw( 2 ) << std::setfill( '0' ) << static_cast<unsigned int>( byte );
-	}
-	std::cout << '\n';
-
-	return hash_result;
+	return tag_bytes;
 }
 
-
+// ---------------------------------------------------------------------
+// 简单自测：跟 Python 版一样做个 smoke test
+// ---------------------------------------------------------------------
 void test_hard_poly1305()
 {
-	using BigInteger = TwilightDream::BigInteger::BigInteger;
+	using BigSignedInteger = TwilightDream::BigInteger::BigSignedInteger;
 
-	// 创建 HardPoly1305 对象
 	HardPoly1305 hard_poly1305;
 
-	// 生成消息和随机密钥
-	std::string			 string_message = std::string( "Hello, world!" );
-	std::vector<uint8_t> message( string_message.begin(), string_message.end() );
-	std::vector<uint8_t> key( 32, 'A' );
-
-	// 计算混合消息数据 将消息与密钥混合
-	std::vector<uint8_t> mixed_data = hard_poly1305.mix_key_and_message( message, key );
-
-	auto format_flags = std::cout.flags();
-
-	// 输出密钥、消息和标签
-	std::cout << "Message: ";
-	for ( const auto& byte : message )
+	// 固定 key（和 Python 自测保持一致风格）
+	std::vector<uint8_t> key( 32 );
+	for ( size_t i = 0; i < key.size(); ++i )
 	{
-		std::cout << std::hex << std::setw( 2 ) << std::setfill( '0' ) << static_cast<unsigned int>( byte );
+		key[ i ] = static_cast<uint8_t>( i );
 	}
-	std::cout << '\n';
-	std::cout.flags( format_flags );
-	std::cout << "message byte length: " << message.size() << std::endl;
 
-	std::cout << "Key: ";
-	for ( const auto& byte : key )
+	std::vector<std::vector<uint8_t>> message_list;
+
+	message_list.push_back( {} );
 	{
-		std::cout << std::hex << std::setw( 2 ) << std::setfill( '0' ) << static_cast<unsigned int>( byte );
+		const char* s = "Hello, HardPoly1305!";
+		message_list.emplace_back( s, s + std::strlen( s ) );
 	}
-	std::cout << '\n';
-	std::cout.flags( format_flags );
-	std::cout << "key byte length: " << key.size() << std::endl;
+	message_list.emplace_back( 16, 'A' );
+	message_list.emplace_back( 31, 'A' );
+	message_list.emplace_back( 32, 'A' );
+	message_list.emplace_back( 100, 'A' );
 
-	std::cout << "MixData: ";
-	for ( const auto& byte : mixed_data )
+	std::cout << "HardPoly1305 V2-Lite quick self-test (C++ version)\n";
+
+	for ( size_t i = 0; i < message_list.size(); ++i )
 	{
-		std::cout << std::hex << std::setw( 2 ) << std::setfill( '0' ) << static_cast<unsigned int>( byte );
+		const auto& m = message_list[ i ];
+		auto		 mixed_data = hard_poly1305.mix_key_and_message( m, key );
+		auto		 tag		  = hard_poly1305.hard_poly1305_core( mixed_data, key );
+
+		std::cout << "[" << i << "] len=" << m.size() << ", tag=" << BytesToHexString( tag ) << "\n";
 	}
-	std::cout << '\n';
-	std::cout.flags( format_flags );
-	std::cout << "mixed_data byte length: " << mixed_data.size() << std::endl;
 
-	// 计算消息的标签
-	std::vector<uint8_t> tag = hard_poly1305.hard_poly1305_core( mixed_data, key );
+	// 一致性检查：同一 (msg, key) 重复调用必须得到相同 tag
+	std::vector<uint8_t> rand_key = generate_random_bytes( 32 );
+	std::vector<uint8_t> rand_msg = generate_random_bytes( 123 );
 
-	std::cout.flags( format_flags );
+	auto mixed1 = hard_poly1305.mix_key_and_message( rand_msg, rand_key );
+	auto mixed2 = hard_poly1305.mix_key_and_message( rand_msg, rand_key );
+
+	auto t1 = hard_poly1305.hard_poly1305_core( mixed1, rand_key );
+	auto t2 = hard_poly1305.hard_poly1305_core( mixed2, rand_key );
+
+	if ( t1 != t2 )
+	{
+		std::cerr << "Self-test failed: tags for same (msg,key) are different.\n";
+	}
+	else
+	{
+		std::cout << "Self-test passed.\n";
+	}
 }
