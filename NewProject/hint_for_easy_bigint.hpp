@@ -385,8 +385,8 @@ namespace HyperInt
 			qhat--;
 			product -= divisor;
 			divid2 += divis1;
-			// if divid2 <= divis1, the addtion of divid2 is overflow, so product must not be larger than divid2.
-			if ((divid2 > divis1) && (product > divid2))
+			// if divid2 < divis1, the addtion of divid2 is overflow, so product must not be larger than divid2.
+			if ((divid2 >= divis1) && (product > divid2))
 			{
 				qhat--;
 				product -= divisor;
