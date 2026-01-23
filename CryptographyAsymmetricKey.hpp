@@ -31,8 +31,15 @@ SOFTWARE.
 
 #include "PrimeNumberTester.hpp"
 #include "FiniteField.hpp"
-#include <unordered_set>
+#include <cstddef>
 #include <future>
+#include <iostream>
+#include <optional>
+#include <ostream>
+#include <string>
+#include <unordered_set>
+#include <utility>
+#include <vector>
 
 /*
 	Twilight-Dream
@@ -79,8 +86,8 @@ namespace TwilightDream::CryptographyAsymmetric
 			BigInteger Number = BigInteger( 0 );
 		};
 
-		void GeneratePrimesInParallelFunction(std::vector<FindPrimeState>& primes, size_t primes_index);
-		std::optional<FindPrimeState> GeneratePrimesInParallelFunctions(size_t bit_count);
+		void GeneratePrimeNumbers(std::vector<FindPrimeState>& primes, size_t primes_index);
+		std::optional<FindPrimeState> GeneratePrimesInParallelFunctions();
 		BigInteger GeneratePrimeNumber( size_t bit_count );
 
 	public:
@@ -177,6 +184,143 @@ namespace TwilightDream::CryptographyAsymmetric
 			std::cout << "The probability of failure is " << FailureCounter * 100.0 / rounds << "%." << std::endl;
 
 			return true;
+		}
+	};
+	
+	class FastRSA
+	{
+	private:
+		using BigInteger = TwilightDream::BigInteger::BigInteger;
+		using BigSignedInteger = TwilightDream::BigInteger::BigSignedInteger;
+		using PrimeNumberTester = TwilightDream::PrimeNumberTester;
+
+		const BigInteger ONE = BigInteger(1);
+		const BigInteger TWO = BigInteger(2);
+		const BigInteger THREE = BigInteger(3);
+
+	public:
+		struct KeyPair
+		{
+			BigInteger PublicExponent = 0;   // e
+			BigInteger PrivateExponent = 0;  // d
+			BigInteger Modulus = 0;          // n = p * q
+
+			// CRT acceleration fields
+			BigInteger PrimeP = 0;           // p
+			BigInteger PrimeQ = 0;           // q
+			BigInteger DP = 0;               // d mod (p - 1)
+			BigInteger DQ = 0;               // d mod (q - 1)
+			BigInteger QInverseModP = 0;     // q^{-1} mod p
+		};
+
+	private:
+		size_t bit_count = 0;
+		BigInteger MIN = 0;
+		BigInteger MAX = 0;
+		BigInteger RANGE_INTEGER = 0;
+		PrimeNumberTester Tester;
+
+		struct FindPrimeState
+		{
+			bool IsPrime = false;
+			BigInteger Number = BigInteger(0);
+		};
+
+	private:
+		void GeneratePrimeNumbers(std::vector<FindPrimeState>& primes, size_t primes_index);
+		std::optional<FindPrimeState> GeneratePrimesInParallelFunctions();
+		BigInteger GeneratePrimeNumber(size_t bit_count);
+
+		static BigInteger NormalizeModulo(const BigSignedInteger& value, const BigInteger& modulus)
+		{
+			BigSignedInteger result = value % BigSignedInteger(modulus);
+			if (result.IsNegative())
+			{
+				result += BigSignedInteger(modulus);
+			}
+			return static_cast<BigInteger>(result);
+		}
+
+		static BigInteger NonNegativeModuloDifference(
+			const BigInteger& left,
+			const BigInteger& right,
+			const BigInteger& modulus)
+		{
+			// return (left - right) mod modulus, but always in [0, modulus-1]
+			if (left >= right)
+			{
+				return left - right;
+			}
+			return modulus - (right - left);
+		}
+
+		static BigInteger ComputeQInverseModP(const BigInteger& q, const BigInteger& p)
+		{
+			BigSignedInteger inverse = BigSignedInteger::ModuloInverse(
+				BigSignedInteger(q),
+				BigSignedInteger(p)
+			);
+			return NormalizeModulo(inverse, p);
+		}
+
+	public:
+		KeyPair GenerateKeys(size_t bit_count, bool use_pkcs_public_exponent = true);
+
+		void Encrypt(BigInteger& message, const BigInteger& publicExponent, const BigInteger& modulus) const;
+
+		void DecryptSlow(BigInteger& cipher, const BigInteger& privateExponent, const BigInteger& modulus) const;
+
+		void DecryptCRT(BigInteger& cipher, const KeyPair& keyPair) const;
+
+		bool ValidateCRTKeyPair(const KeyPair& keyPair) const;
+
+		static bool SelfSanityCheck(size_t bit_count, size_t rounds)
+		{
+			if (rounds == 0)
+			{
+				return false;
+			}
+
+			FastRSA rsa;
+			size_t successCounter = 0;
+			size_t failureCounter = 0;
+
+			for (size_t current_round = 0; current_round < rounds; ++current_round)
+			{
+				KeyPair keys = rsa.GenerateKeys(bit_count, true);
+
+				BigInteger originalMessage = BigInteger::RandomGenerateNBit(bit_count / 2);
+				if (originalMessage >= keys.Modulus)
+				{
+					originalMessage %= keys.Modulus;
+				}
+
+				BigInteger encryptedMessage = originalMessage;
+				rsa.Encrypt(encryptedMessage, keys.PublicExponent, keys.Modulus);
+
+				BigInteger decryptedSlow = encryptedMessage;
+				rsa.DecryptSlow(decryptedSlow, keys.PrivateExponent, keys.Modulus);
+
+				BigInteger decryptedFast = encryptedMessage;
+				rsa.DecryptCRT(decryptedFast, keys);
+
+				if (decryptedSlow != originalMessage || decryptedFast != originalMessage || decryptedSlow != decryptedFast)
+				{
+					std::cerr << "Failure: FastRSA self-test failed.\n";
+					++failureCounter;
+				}
+				else
+				{
+					std::cout << "Success: FastRSA self-test passed.\n";
+					++successCounter;
+				}
+			}
+
+			std::cout << "FastRSA self sanity check all executed.\n";
+			std::cout << "The probability of success is " << successCounter * 100.0 / rounds << "%.\n";
+			std::cout << "The probability of failure is " << failureCounter * 100.0 / rounds << "%.\n";
+
+			return failureCounter == 0;
 		}
 	};
 

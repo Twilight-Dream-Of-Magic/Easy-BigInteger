@@ -30,13 +30,14 @@ SOFTWARE.
 
 #include "BigInteger.hpp"
 #include "PrimeNumberTester.hpp"
+#include <iostream>
 #include <stdexcept>
 #include <string>
-#include <memory>
+#include <utility>
 
 namespace TwilightDream::Math
 {
-	// »ùÀà£¬°üº¬ËùÓĞ¹²ÏíµÄÂß¼­
+	// åŸºç±»ï¼ŒåŒ…å«æ‰€æœ‰å…±äº«çš„é€»è¾‘
 	class FiniteFieldBase
 	{
 	public:
@@ -47,28 +48,28 @@ namespace TwilightDream::Math
 	protected:
 		UnsignedInteger prime;
 
-		// ¹¹Ôìº¯Êı
+		// æ„é€ å‡½æ•°
 		FiniteFieldBase( const UnsignedInteger& modulus ) : prime( modulus )
 		{}
 
 	public:
-		// ĞéÎö¹¹º¯Êı
+		// è™šææ„å‡½æ•°
 		virtual ~FiniteFieldBase() = default;
 
-		// ¼ÆËãÄæÔª£¬¹«¹²Âß¼­
+		// è®¡ç®—é€†å…ƒï¼Œå…¬å…±é€»è¾‘
 		virtual Integer compute_inverse_signed() const
 		{
-			std::cerr << "´íÎó: µ÷ÓÃ»ùÀàµÄ compute_inverse_signed ·½·¨¡£" << std::endl;
+			std::cerr << "é”™è¯¯: è°ƒç”¨åŸºç±»çš„ compute_inverse_signed æ–¹æ³•ã€‚" << std::endl;
 			throw std::runtime_error( "Called base class compute_inverse_signed method." );
 		}
 
 		virtual UnsignedInteger compute_inverse_unsigned() const
 		{
-			std::cerr << "´íÎó: µ÷ÓÃ»ùÀàµÄ compute_inverse_unsigned ·½·¨¡£" << std::endl;
+			std::cerr << "é”™è¯¯: è°ƒç”¨åŸºç±»çš„ compute_inverse_unsigned æ–¹æ³•ã€‚" << std::endl;
 			throw std::runtime_error( "Called base class compute_inverse_unsigned method." );
 		}
 
-		// »ñÈ¡Ä£Êı
+		// è·å–æ¨¡æ•°
 		virtual const UnsignedInteger& GetPrime() const
 		{
 			return prime;
@@ -89,7 +90,7 @@ namespace TwilightDream::Math
 			return this->power( prime - UnsignedInteger( "2" ) ).unsigned_value;
 		}
 	public:
-		// ¹¹Ôìº¯Êı
+		// æ„é€ å‡½æ•°
 		UnsignedFiniteField( const UnsignedInteger& number, const UnsignedInteger& modulus )
 			:
 			unsigned_value( number ),
@@ -126,7 +127,7 @@ namespace TwilightDream::Math
 			}
 		}
 
-		// ¸´ÖÆ¹¹Ôìº¯Êı
+		// å¤åˆ¶æ„é€ å‡½æ•°
 		UnsignedFiniteField( const UnsignedFiniteField& other )
 			:
 			unsigned_value( other.unsigned_value ),
@@ -134,7 +135,7 @@ namespace TwilightDream::Math
 			FiniteFieldBase( other.prime )
 		{}
 
-		// ÒÆ¶¯¹¹Ôìº¯Êı
+		// ç§»åŠ¨æ„é€ å‡½æ•°
 		UnsignedFiniteField( UnsignedFiniteField&& other ) noexcept
 			:
 			unsigned_value( std::move(other.unsigned_value) ),
@@ -142,7 +143,7 @@ namespace TwilightDream::Math
 			FiniteFieldBase( std::move( other.prime ) )
 		{}
 
-		// ¸³ÖµÔËËã·û
+		// èµ‹å€¼è¿ç®—ç¬¦
 		UnsignedFiniteField& operator=( const UnsignedFiniteField& other )
 		{
 			if ( this != &other )
@@ -157,7 +158,7 @@ namespace TwilightDream::Math
 			return *this;
 		}
 
-		// ¸³ÖµÔËËã·û£¨ÒÆ¶¯£©
+		// èµ‹å€¼è¿ç®—ç¬¦ï¼ˆç§»åŠ¨ï¼‰
 		UnsignedFiniteField& operator=( UnsignedFiniteField&& other )
 		{
 			if ( this != &other )
@@ -169,7 +170,7 @@ namespace TwilightDream::Math
 			return *this;
 		}
 
-		// »ñÈ¡ÎŞ·ûºÅÖµ
+		// è·å–æ— ç¬¦å·å€¼
 		const UnsignedInteger& GetValue() const
 		{
 			return unsigned_value;
@@ -180,7 +181,7 @@ namespace TwilightDream::Math
 			unsigned_value = value.unsigned_value;
 		}
 
-		// ¼Ó·¨
+		// åŠ æ³•
 		UnsignedFiniteField operator+( const UnsignedFiniteField& other ) const
 		{
 			if ( prime != other.prime )
@@ -190,7 +191,7 @@ namespace TwilightDream::Math
 			return UnsignedFiniteField( unsigned_value + other.unsigned_value, prime );
 		}
 
-		// ¼õ·¨
+		// å‡æ³•
 		UnsignedFiniteField operator-( const UnsignedFiniteField& other ) const
 		{
 			if ( prime != other.prime )
@@ -211,7 +212,7 @@ namespace TwilightDream::Math
 			}
 		}
 
-		// ³Ë·¨
+		// ä¹˜æ³•
 		UnsignedFiniteField operator*( const UnsignedFiniteField& other ) const
 		{
 			if ( prime != other.prime )
@@ -221,7 +222,7 @@ namespace TwilightDream::Math
 			UnsignedInteger result;
 			if ( unsigned_value.BitLength() > 128 || other.unsigned_value.BitLength() > 128 )
 			{
-				//ÃÉ¸çÂíÀûËã·¨
+				//è’™å“¥é©¬åˆ©ç®—æ³•
 				Montgomery montgomery( this->prime );
 				result = montgomery.Multiplication(unsigned_value, other.unsigned_value);
 				return UnsignedFiniteField( result, prime );
@@ -229,7 +230,7 @@ namespace TwilightDream::Math
 			return UnsignedFiniteField( unsigned_value * other.unsigned_value, prime );
 		}
 
-		// ³ı·¨
+		// é™¤æ³•
 		UnsignedFiniteField operator/( const UnsignedFiniteField& other ) const
 		{
 			if ( prime != other.prime )
@@ -240,13 +241,13 @@ namespace TwilightDream::Math
 			return UnsignedFiniteField( unsigned_value * inverse, prime );
 		}
 
-		// ×óÒÆ¸³Öµ
+		// å·¦ç§»èµ‹å€¼
 		UnsignedFiniteField& operator<<=( size_t shift )
 		{
 			if ( shift == 0 )
 				return *this;
 
-			// °´Î»×óÒÆ
+			// æŒ‰ä½å·¦ç§»
 			unsigned_value <<= shift;
 
 			if(unsigned_value >= prime)
@@ -255,13 +256,13 @@ namespace TwilightDream::Math
 			return *this;
 		}
 
-		// ÓÒÒÆ¸³Öµ
+		// å³ç§»èµ‹å€¼
 		UnsignedFiniteField& operator>>=( size_t shift )
 		{
 			if ( shift == 0 )
 				return *this;
 
-			// °´Î»ÓÒÒÆ
+			// æŒ‰ä½å³ç§»
 			unsigned_value >>= shift;
 
 			if(unsigned_value >= prime)
@@ -270,7 +271,7 @@ namespace TwilightDream::Math
 			return *this;
 		}
 
-		// ×óÒÆ
+		// å·¦ç§»
 		UnsignedFiniteField operator<<( const size_t& shift ) const
 		{
 			UnsignedFiniteField copy = *this;
@@ -278,7 +279,7 @@ namespace TwilightDream::Math
 			return copy;
 		}
 
-		// ÓÒÒÆ
+		// å³ç§»
 		UnsignedFiniteField operator>>( const size_t& shift ) const
 		{
 			UnsignedFiniteField copy = *this;
@@ -286,7 +287,7 @@ namespace TwilightDream::Math
 			return copy;
 		}
 
-		// ÃİÔËËã
+		// å¹‚è¿ç®—
 		UnsignedFiniteField power( const UnsignedInteger& exponent ) const
 		{
 			UnsignedInteger result = UnsignedInteger( "1" );
@@ -325,7 +326,7 @@ namespace TwilightDream::Math
 			return UnsignedFiniteField( result, prime );
 		}
 
-		// ÇóÄæÔª
+		// æ±‚é€†å…ƒ
 		UnsignedFiniteField inverse() const
 		{
 			if(unsigned_value == 1)
@@ -337,10 +338,10 @@ namespace TwilightDream::Math
 			return UnsignedFiniteField( result, prime );
 		}
 
-		// È¡¸º ²¢×ª»»µ½ ÓĞ·ûºÅÖÊÊıÓò
+		// å–è´Ÿ å¹¶è½¬æ¢åˆ° æœ‰ç¬¦å·è´¨æ•°åŸŸ
 		SignedFiniteField Convert() const;
 
-		// ÏàµÈĞÔ¼ì²é
+		// ç›¸ç­‰æ€§æ£€æŸ¥
 		bool operator==( const UnsignedFiniteField& other ) const
 		{
 			return ( unsigned_value == other.unsigned_value ) && ( prime == other.prime );
@@ -351,13 +352,13 @@ namespace TwilightDream::Math
 			return !( *this == other );
 		}
 
-		// ×ª»»Îª×Ö·û´®
+		// è½¬æ¢ä¸ºå­—ç¬¦ä¸²
 		std::string ToString() const
 		{
 			return "PositiveFiniteField_" + prime.ToString() + "(" + unsigned_value.ToString() + ")";
 		}
 
-		// ÉèÖÃÄ£Êı£¨Èç¹ûĞèÒª£©
+		// è®¾ç½®æ¨¡æ•°ï¼ˆå¦‚æœéœ€è¦ï¼‰
 		void SetPrime( const UnsignedInteger& modulus )
 		{
 			using PrimeNumberTester = TwilightDream::PrimeNumberTester;
@@ -386,7 +387,7 @@ namespace TwilightDream::Math
 
 		Integer compute_inverse_signed() const
 		{
-			// À©Õ¹Å·¼¸ÀïµÃËã·¨
+			// æ‰©å±•æ¬§å‡ é‡Œå¾—ç®—æ³•
 			Integer t = 0;
 			Integer new_t = 1;
 			Integer r = prime;
@@ -415,7 +416,7 @@ namespace TwilightDream::Math
 			return t;
 		}
 	public:
-		// ¹¹Ôìº¯Êı
+		// æ„é€ å‡½æ•°
 		SignedFiniteField( const Integer& number, const UnsignedInteger& modulus )
 			:
 			signed_value( number ),
@@ -467,7 +468,7 @@ namespace TwilightDream::Math
 			}
 		}
 
-		// ¸´ÖÆ¹¹Ôìº¯Êı
+		// å¤åˆ¶æ„é€ å‡½æ•°
 		SignedFiniteField( const SignedFiniteField& other )
 			:
 			signed_value( other.signed_value ),
@@ -475,7 +476,7 @@ namespace TwilightDream::Math
 			FiniteFieldBase( other.prime )
 		{}
 
-		// ÒÆ¶¯¹¹Ôìº¯Êı
+		// ç§»åŠ¨æ„é€ å‡½æ•°
 		SignedFiniteField( SignedFiniteField&& other ) noexcept
 			:
 			signed_value( std::move(other.signed_value) ),
@@ -483,7 +484,7 @@ namespace TwilightDream::Math
 			FiniteFieldBase( std::move( other.prime ) )
 		{}
 
-		// ¸³ÖµÔËËã·û
+		// èµ‹å€¼è¿ç®—ç¬¦
 		SignedFiniteField& operator=( const SignedFiniteField& other )
 		{
 			if ( this != &other )
@@ -498,7 +499,7 @@ namespace TwilightDream::Math
 			return *this;
 		}
 
-		// ¸³ÖµÔËËã·û£¨ÒÆ¶¯£©
+		// èµ‹å€¼è¿ç®—ç¬¦ï¼ˆç§»åŠ¨ï¼‰
 		SignedFiniteField& operator=( SignedFiniteField&& other )
 		{
 			if ( this != &other )
@@ -510,7 +511,7 @@ namespace TwilightDream::Math
 			return *this;
 		}
 
-		// »ñÈ¡ÓĞ·ûºÅÖµ
+		// è·å–æœ‰ç¬¦å·å€¼
 		const Integer& GetValue() const
 		{
 			return signed_value;
@@ -521,9 +522,9 @@ namespace TwilightDream::Math
 			signed_value = value.signed_value;
 		}
 
-		// ÔËËã·ûÖØÔØ
+		// è¿ç®—ç¬¦é‡è½½
 
-		// ¼Ó·¨
+		// åŠ æ³•
 		SignedFiniteField operator+( const SignedFiniteField& other ) const
 		{
 			if ( prime != other.prime )
@@ -533,7 +534,7 @@ namespace TwilightDream::Math
 			return SignedFiniteField( signed_value + other.signed_value, prime );
 		}
 
-		// ¼õ·¨
+		// å‡æ³•
 		SignedFiniteField operator-( const SignedFiniteField& other ) const
 		{
 			if ( prime != other.prime )
@@ -543,7 +544,7 @@ namespace TwilightDream::Math
 			return SignedFiniteField( signed_value - other.signed_value, prime );
 		}
 
-		// ³Ë·¨
+		// ä¹˜æ³•
 		SignedFiniteField operator*( const SignedFiniteField& other ) const
 		{
 			if ( prime != other.prime )
@@ -553,7 +554,7 @@ namespace TwilightDream::Math
 			return SignedFiniteField( signed_value * other.signed_value, prime );
 		}
 
-		// ³ı·¨
+		// é™¤æ³•
 		SignedFiniteField operator/( const SignedFiniteField& other ) const
 		{
 			if ( prime != other.prime )
@@ -564,13 +565,13 @@ namespace TwilightDream::Math
 			return SignedFiniteField( signed_value * inverse, prime );
 		}
 
-		// ×óÒÆ¸³Öµ
+		// å·¦ç§»èµ‹å€¼
 		SignedFiniteField& operator<<=( size_t shift )
 		{
 			if ( shift == 0 )
 				return *this;
 
-			// °´Î»×óÒÆ
+			// æŒ‰ä½å·¦ç§»
 			signed_value <<= shift;
 
 			if(signed_value >= prime)
@@ -579,13 +580,13 @@ namespace TwilightDream::Math
 			return *this;
 		}
 
-		// ÓÒÒÆ¸³Öµ
+		// å³ç§»èµ‹å€¼
 		SignedFiniteField& operator>>=( size_t shift )
 		{
 			if ( shift == 0 )
 				return *this;
 
-			// °´Î»ÓÒÒÆ
+			// æŒ‰ä½å³ç§»
 			signed_value >>= shift;
 
 			if(signed_value >= prime)
@@ -594,7 +595,7 @@ namespace TwilightDream::Math
 			return *this;
 		}
 
-		// ×óÒÆ
+		// å·¦ç§»
 		SignedFiniteField operator<<( const size_t& shift ) const
 		{
 			SignedFiniteField copy = *this;
@@ -602,7 +603,7 @@ namespace TwilightDream::Math
 			return copy;
 		}
 
-		// ÓÒÒÆ
+		// å³ç§»
 		SignedFiniteField operator>>( const size_t& shift ) const
 		{
 			SignedFiniteField copy = *this;
@@ -610,14 +611,14 @@ namespace TwilightDream::Math
 			return copy;
 		}
 
-		// ÃİÔËËã
+		// å¹‚è¿ç®—
 		SignedFiniteField power( const Integer& exponent ) const
 		{
 			Integer result = Integer( "1" );
 			Integer base = signed_value;
 			Integer copy_exponent = exponent;
 
-			// ´¦Àí¸ºÖ¸Êı
+			// å¤„ç†è´ŸæŒ‡æ•°
 			if ( exponent.IsNegative() )
 			{
 				copy_exponent = -exponent;
@@ -637,7 +638,7 @@ namespace TwilightDream::Math
 			return SignedFiniteField( result, prime );
 		}
 
-		// ÇóÄæÔª
+		// æ±‚é€†å…ƒ
 		SignedFiniteField inverse() const
 		{
 			if(signed_value == 1)
@@ -649,10 +650,10 @@ namespace TwilightDream::Math
 			return SignedFiniteField( result, prime );
 		}
 
-		// È¡¸º ²¢×ª»»µ½ ÎŞ·ûºÅÖÊÊıÓò
+		// å–è´Ÿ å¹¶è½¬æ¢åˆ° æ— ç¬¦å·è´¨æ•°åŸŸ
 		UnsignedFiniteField Convert() const;
 
-		// ÏàµÈĞÔ¼ì²é
+		// ç›¸ç­‰æ€§æ£€æŸ¥
 		bool operator==( const SignedFiniteField& other ) const
 		{
 			return ( signed_value == other.signed_value ) && ( prime == other.prime );
@@ -663,13 +664,13 @@ namespace TwilightDream::Math
 			return !( *this == other );
 		}
 
-		// ×ª»»Îª×Ö·û´®
+		// è½¬æ¢ä¸ºå­—ç¬¦ä¸²
 		std::string ToString() const
 		{
 			return "NegativeFiniteField_" + prime.ToString() + "(" + signed_value.ToString() + ")";
 		}
 
-		// ÉèÖÃÄ£Êı£¨Èç¹ûĞèÒª£©
+		// è®¾ç½®æ¨¡æ•°ï¼ˆå¦‚æœéœ€è¦ï¼‰
 		void SetPrime( const Integer& modulus )
 		{
 			using PrimeNumberTester = TwilightDream::PrimeNumberTester;

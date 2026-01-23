@@ -3,9 +3,6 @@ MIT License
 
 Copyright (c) 2024-2050 Twilight-Dream & With-Sky
 
-https://github.com/Twilight-Dream-Of-Magic/
-https://github.com/With-Sky
-
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights
@@ -25,118 +22,151 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-#if !defined(HARD_POLY1305_WITH_BIGINTEGER)
-#define HARD_POLY1305_WITH_BIGINTEGER
+#ifndef HARD_POLY1305_HPP
+#define HARD_POLY1305_HPP
+
+#include <cstddef>
+#include <cstdint>
+#include <stdexcept>
+#include <vector>
 
 #include "BigInteger.hpp"
-#include <vector>
-#include <string>
 
-// 提取子数组函数，类似于 std::span 和 Python 的切片
-extern std::vector<uint8_t> SubByteArray( const std::vector<uint8_t>& data,
-										  ptrdiff_t start,
-										  ptrdiff_t end,
-										  ptrdiff_t step );
-
-// 将字节数组转换为 16 进制字符串表示
-extern std::string BytesToHexString( const std::vector<uint8_t>& bytes );
-
-// 生成随机字节序列
-extern std::vector<uint8_t> generate_random_bytes( size_t size );
-
-// ---------------------------------------------------------------------
-// HardPoly1305 V2-Lite：从 master_key 派生出的内部参数
-//
-// - k_h, k_x : F1 = Z_{p1} 上的偏移参数（参与 α 的多项式）
-// - k_mix, k_mix2 : F2 = Z_{p2} 上的混合参数（参与 bit 域 + ARX）
-// ---------------------------------------------------------------------
-struct HardPoly1305KeyParams
-{
-	using BigSignedInteger = TwilightDream::BigInteger::BigSignedInteger;
-
-	BigSignedInteger k_h;
-	BigSignedInteger k_x;
-	BigSignedInteger k_mix;
-	BigSignedInteger k_mix2;
-
-	HardPoly1305KeyParams() = default;
-
-	HardPoly1305KeyParams(
-		const BigSignedInteger& kh,
-		const BigSignedInteger& kx,
-		const BigSignedInteger& km,
-		const BigSignedInteger& km2
-	)
-		: k_h( kh )
-		, k_x( kx )
-		, k_mix( km )
-		, k_mix2( km2 )
-	{}
-};
-
+/**
+ * @brief Reference implementation of the HardPoly1305-SP SafePrime branch.
+ *
+ * This class follows Algorithm A.2 from the paper:
+ *
+ *   HardPoly1305-BEF7 and HardPoly1305-SP:
+ *   Algebraic Poly1305 Candidates under Arbitrary Nonce Repetition
+ *   and Adaptive Tweaks.
+ *
+ * Important engineering scope:
+ * - This file is the Easy-BigInteger reference implementation.
+ * - It is intended for mathematical conformance and known-answer testing.
+ * - It is not the fixed-limb, constant-time, production implementation
+ *   described by the performance section of the paper.
+ *
+ * The historical two-stage API is preserved:
+ *
+ *   mix_key_and_message(...)
+ *   hard_poly1305_core(...)
+ *
+ * HardPoly1305-SP does not alter the message in the PreMix stage, so
+ * mix_key_and_message() returns the original message unchanged.
+ */
 class HardPoly1305
 {
 private:
-	using BigSignedInteger = TwilightDream::BigInteger::BigSignedInteger;
+	using BigInteger = TwilightDream::BigInteger::BigInteger;
 
-	// Poly1305 原始模数 p = 2^130 - 5
-	BigSignedInteger p;
+	// P1 = 2^130 - 5, used by the Poly1305 accumulator.
+	static const BigInteger P1;
 
-	// 第二个大素数 p2 = 2^256 - 188069
-	BigSignedInteger p2;
+	// P2 = 2^256 - 188069, used by the SafePrime branch.
+	static const BigInteger P2;
 
-	// 标准 Poly1305 clamp 掩码
-	BigSignedInteger clamp_bit_mask = BigSignedInteger( "0FFFFFFC0FFFFFFC0FFFFFFC0FFFFFFF", 16 );
+	static const BigInteger MASK_256;
+	static const BigInteger MASK_128;
+	static const BigInteger CLAMP_MASK;
+	static const BigInteger A7_SHIFT_248;
+	static const BigInteger TWO_129;
+	static const BigInteger TWO_193;
 
-	// 2^128，用来做最终截断
-	BigSignedInteger hash_max_number = ( BigSignedInteger( 1 ) << 128 );
+	// Stored PreMix state produced by mix_key_and_message().
+	BigInteger key_stored;
+	BigInteger encoded_context_stored;
+	BigInteger rotated_key_context_stored;
+	BigInteger multiplier_mask_stored;
+	BigInteger additive_mask_stored;
+	BigInteger reduced_key_stored;
+	BigInteger reduced_context_stored;
+	bool context_ready;
 
-	// 2^256 - 1，bit 域掩码，限制到 256 bit
-	BigSignedInteger bit_256_mask = ( ( BigSignedInteger( 1 ) << 256 ) - BigSignedInteger( 1 ) );
+	/** Convert a little-endian byte vector to a non-negative BigInteger. */
+	static BigInteger bytes_to_integer_little_endian( const std::vector<uint8_t>& bytes );
 
-	// --------- V2-Lite 内部工具函数 ----------
+	/** Export the low fixed-length little-endian representation of a BigInteger. */
+	static std::vector<uint8_t> integer_to_bytes_little_endian( const BigInteger& integer, std::size_t length );
 
-	// [Sec 1.1] 从 32 字节 master_key 派生内部参数
-	HardPoly1305KeyParams derive_key_parameters( const std::vector<uint8_t>& master_key ) const;
+	/** Rotate a 256-bit word left without calling BigInteger::BitRotateLeft(). */
+	static BigInteger rotate_left_256( const BigInteger& value, uint32_t shift );
 
-	// [Sec 1.4] 小 h：u_i = h_core(h_{i-1}, X_i, params)
-	BigSignedInteger h_core(
-		const BigSignedInteger& hash_value,
-		const BigSignedInteger& block_value,
-		const HardPoly1305KeyParams& params
-	) const;
+	/**
+	 * Derive q, Q, rho, sigma, and Kbar for one key under an already encoded
+	 * public context E.
+	 */
+	static void derive_pre_mix_parameters(
+		const std::vector<uint8_t>& key,
+		const BigInteger& encoded_context,
+		BigInteger& key_integer,
+		BigInteger& rotated_key_context,
+		BigInteger& multiplier_mask,
+		BigInteger& additive_mask,
+		BigInteger& reduced_key );
 
-	// [Sec 1.5] 从 256-bit u_i 导出 (r_i, s_i)
-	void derive_r_s_from_u(
-		const BigSignedInteger& u_value,
-		BigSignedInteger& r_out,
-		BigSignedInteger& s_out
-	) const;
+	/** RX transform from one 256-bit word to two 128-bit words. */
+	static void rx_transform( const BigInteger& core_output, BigInteger& lower_output, BigInteger& upper_output );
 
 public:
-	HardPoly1305()
-		: p( "1361129467683753853853498429727072845819", 10 ), // 2^130 - 5
-		  p2( "115792089237316195423570985008687907853269984665640564039457584007913129451867", 10 ) // 2^256 - 188069 (Safe Prime)
-	{
-	}
+	HardPoly1305();
+	~HardPoly1305();
 
-	// [Sec 1.2] 消息 & 密钥混合：mixed(M, K)
-	std::vector<uint8_t> mix_key_and_message( const std::vector<uint8_t>& message,
-											  const std::vector<uint8_t>& key );
+	/**
+	 * @brief PreMix the 256-bit key with the public nonce, tweak, and theta.
+	 *
+	 * @param message Original message. The SP PreMix returns it unchanged.
+	 * @param key Exactly 32 key bytes.
+	 * @param nonce Exactly 12 nonce bytes.
+	 * @param tweak Exactly 12 tweak bytes.
+	 * @param theta Exactly 8 bytes encoding the little-endian 64-bit theta.
+	 * @return A copy of message, unchanged.
+	 */
+	std::vector<uint8_t> mix_key_and_message(
+		const std::vector<uint8_t>& message,
+		const std::vector<uint8_t>& key,
+		const std::vector<uint8_t>& nonce = std::vector<uint8_t>( 12, 0 ),
+		const std::vector<uint8_t>& tweak = std::vector<uint8_t>( 12, 0 ),
+		const std::vector<uint8_t>& theta = std::vector<uint8_t>( 8, 0 ) );
 
-	// [Sec 1.6] HardPoly1305 V2-Lite 主算法核心（输入：mixed(M,K) 与 master_key）
-	std::vector<uint8_t> hard_poly1305_core( const std::vector<uint8_t>& mixed_data,
-											 const std::vector<uint8_t>& key );
+	/**
+	 * @brief Compute the HardPoly1305-SP tag using the stored public context.
+	 *
+	 * When key_override is empty, the key from mix_key_and_message() is used.
+	 * When key_override contains exactly 32 bytes, the PreMix key-dependent
+	 * values are genuinely re-derived under the stored public context for this
+	 * call. The override is not silently ignored.
+	 *
+	 * @param message Message to authenticate.
+	 * @param key_override Empty, or exactly 32 key bytes.
+	 * @return The 16-byte little-endian authentication tag.
+	 */
+	std::vector<uint8_t> hard_poly1305_core(
+		const std::vector<uint8_t>& message,
+		const std::vector<uint8_t>& key_override = std::vector<uint8_t>() ) const;
+
+	/**
+	 * @brief Clear the stored PreMix state.
+	 *
+	 * This is a best-effort logical reset. Easy-BigInteger uses dynamic storage,
+	 * so this method is not a formal guarantee that every previous heap copy was
+	 * securely erased.
+	 */
+	void clear_context();
 };
 
-// 测试 HardPoly1305 类
-extern void test_hard_poly1305();
+/** One-call convenience wrapper for HardPoly1305-SP. */
+std::vector<uint8_t> hardpoly1305_sp_tag(
+	const std::vector<uint8_t>& message,
+	const std::vector<uint8_t>& key,
+	const std::vector<uint8_t>& nonce = std::vector<uint8_t>( 12, 0 ),
+	const std::vector<uint8_t>& tweak = std::vector<uint8_t>( 12, 0 ),
+	const std::vector<uint8_t>& theta = std::vector<uint8_t>( 8, 0 ) );
 
-inline std::vector<uint8_t> hardpoly1305_v2_lite_tag( const std::vector<uint8_t>& message, const std::vector<uint8_t>& master_key )
-{
-	HardPoly1305 mac;
-	auto		 mixed = mac.mix_key_and_message( message, master_key );
-	return mac.hard_poly1305_core( mixed, master_key );
-}
+/** Run deterministic known-answer and API-contract tests. */
+bool hardpoly1305_sp_self_test();
 
-#endif	// HARD_POLY1305_WITH_BIGINTEGER
+/** Compatibility test entry point. Throws std::runtime_error on failure. */
+void test_hard_poly1305();
+
+#endif // HARD_POLY1305_HPP

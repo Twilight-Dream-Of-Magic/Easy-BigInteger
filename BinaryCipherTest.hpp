@@ -29,6 +29,9 @@ SOFTWARE.
 
 #include "BigInteger.hpp"
 #include <array>
+#include <bitset>
+#include <iostream>
+#include <vector>
 
 #ifndef USE_BIG_INTEGER_ARITHMATIC_VERSION
 #define USE_BIG_INTEGER_ARITHMATIC_VERSION

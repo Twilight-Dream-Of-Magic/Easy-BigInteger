@@ -550,7 +550,7 @@ namespace TwilightDream::BigInteger
 		 * 
 		 * @param OutputData The vector to store the exported data.
 		 */
-		void ExportData( std::vector<std::byte>& OutputData, size_t length = 0, bool is_big_endian = false )
+		void ExportData( std::vector<std::byte>& OutputData, size_t length = 0, bool is_big_endian = false ) const
 		{
 			size_t bit_length = BitLength();
 			size_t bytes = ( bit_length + CHAR_BIT - 1 ) / CHAR_BIT;
@@ -606,7 +606,7 @@ namespace TwilightDream::BigInteger
 		 * 
 		 * @param OutputData The vector to store the exported data.
 		 */
-		void ExportData( std::vector<uint8_t>& OutputData, size_t length = 0, bool is_big_endian = false )
+		void ExportData( std::vector<uint8_t>& OutputData, size_t length = 0, bool is_big_endian = false ) const
 		{
 			std::vector<std::byte> output_byte;
 			ExportData( output_byte, length, is_big_endian );

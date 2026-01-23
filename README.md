@@ -19,23 +19,59 @@ To integrate Easy-BigInteger into your project, include the `BigInteger.hpp` fil
 
 ### Building with CMake
 
-Easy-BigInteger uses CMake to manage the build process. To build the library and run tests, follow these steps:
+The project requires CMake 3.21 or newer and a C++17 compiler. The checked-in presets support Linux with GCC/Clang and Windows with MSVC/Visual Studio 2022.
 
-1. Clone the repository:
-   ```
-   git clone https://github.com/Twilight-Dream-Of-Magic/Easy-BigInteger.git
-   cd Easy-BigInteger
-   ```
-2. Create a build directory and run CMake:
-   ```
-   mkdir build
-   cd build
-   cmake ..
-   ```
-3. Compile the project:
-   ```
-   cmake --build .
-   ```
+#### Linux (Ninja, GCC or Clang)
+
+```bash
+cmake --preset linux-debug
+cmake --build --preset linux-debug -j
+ctest --preset linux-debug
+```
+
+For a release build, replace `linux-debug` with `linux-release`. To select Clang explicitly on a clean build tree:
+
+```bash
+CC=clang CXX=clang++ cmake --preset linux-release
+cmake --build --preset linux-release -j
+ctest --preset linux-release
+```
+
+#### Windows (Visual Studio 2022 / MSVC)
+
+Open the repository folder directly in Visual Studio 2022 and select the `windows-msvc` CMake configure preset, or run from a Developer PowerShell:
+
+```powershell
+cmake --preset windows-msvc
+cmake --build --preset windows-msvc-debug
+ctest --preset windows-msvc-debug
+```
+
+Use `windows-msvc-release` for Release. `CMakeSettings.json` remains available for older Visual Studio folder-based CMake workflows.
+
+#### Installing and consuming from another CMake project
+
+```bash
+cmake --install out/build/linux-release --prefix /path/to/easy-bigint
+```
+
+```cmake
+find_package(EasyBigInteger CONFIG REQUIRED)
+target_link_libraries(your_target PRIVATE EasyBigInteger::BigNumberSystem)
+```
+
+Installed headers use the `EasyBigInteger/` prefix, for example `#include <EasyBigInteger/BigInteger.hpp>`.
+
+Useful switches:
+
+```bash
+-DBUILD_EXISTING_CRYPTOGRAPHY_EXAMPLE_TARGETS=OFF
+-DEASY_BIGINT_BUILD_TESTS=OFF
+-DEASY_BIGINT_ENABLE_SANITIZERS=ON
+-DEASY_BIGINT_WARNINGS_AS_ERRORS=ON
+```
+
+The main regression suite is registered with CTest. `TestCryptography` is an experimental example executable and is built by default, but is not treated as a passing regression test.
 
 ### Example Usage
 

@@ -1,6 +1,4 @@
 #include "BigFraction.hpp"
-#include "BigFraction.hpp"
-#include "BigFraction.hpp"
 /*
 MIT License
 

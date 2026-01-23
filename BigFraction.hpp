@@ -30,6 +30,13 @@ SOFTWARE.
 
 #include "BigInteger.hpp"
 
+#include <cmath>
+#include <cstdint>
+#include <iosfwd>
+#include <optional>
+#include <stdexcept>
+#include <string>
+
 namespace TwilightDream::BigFraction
 {
 	enum class DecimalPrecisionMode : uint32_t

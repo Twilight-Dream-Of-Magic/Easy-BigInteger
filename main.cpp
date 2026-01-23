@@ -373,9 +373,6 @@ auto main( int argument_cout, char* argument_vector[] ) -> int
 	BinaryCipherNaive BinaryCipherNaiveInstance;
 	BinaryCipherNaiveInstance.Test();
 
-	//大整数应该不会计算错误。因为已经全部都测试过了。那唯一可能的是我算法写错了，或者还有什么我们的别的不知道的原因
-	//Large integers shouldn't be miscalculated. That's because it's all been tested. So the only possibility is that I wrote the algorithm wrong, or something else we don't know.
-	//2020-08-25 Updated: Fixed
 	test_hard_poly1305();
 
 	return 0;

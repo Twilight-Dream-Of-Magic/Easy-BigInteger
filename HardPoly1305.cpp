@@ -3,9 +3,6 @@ MIT License
 
 Copyright (c) 2024-2050 Twilight-Dream & With-Sky
 
-https://github.com/Twilight-Dream-Of-Magic/
-https://github.com/With-Sky
-
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights
@@ -28,396 +25,468 @@ SOFTWARE.
 #include "HardPoly1305.hpp"
 
 #include <algorithm>
-#include <cassert>
 #include <iomanip>
 #include <iostream>
-#include <random>
+#include <limits>
 #include <sstream>
+#include <stdexcept>
+#include <string>
 
-using BigSignedInteger = TwilightDream::BigInteger::BigSignedInteger;
+using TwilightDream::BigInteger::BigInteger;
 
-// ---------------------------------------------------------------------
-// 工具函数实现
-// ---------------------------------------------------------------------
-
-std::vector<uint8_t> SubByteArray( const std::vector<uint8_t>& data,
-								   ptrdiff_t start,
-								   ptrdiff_t end,
-								   ptrdiff_t step )
+namespace
 {
-	if ( step == 0 )
+	/** Convert bytes to a lowercase hexadecimal string for self-test diagnostics. */
+	std::string bytes_to_hexadecimal_string( const std::vector<uint8_t>& bytes )
 	{
-		return {};
+		std::ostringstream stream;
+		stream << std::hex << std::setfill( '0' );
+		for ( uint8_t byte : bytes )
+		{
+			stream << std::setw( 2 ) << static_cast<unsigned int>( byte );
+		}
+		return stream.str();
 	}
 
-	ptrdiff_t dataSize = static_cast<ptrdiff_t>( data.size() );
-
-	if ( start < 0 )
+	/** Parse an even-length hexadecimal string used by deterministic KATs. */
+	std::vector<uint8_t> hexadecimal_string_to_bytes( const std::string& hexadecimal_string )
 	{
-		start += dataSize;
-	}
-	if ( end < 0 )
-	{
-		end += dataSize;
-	}
+		if ( hexadecimal_string.size() % 2 != 0 )
+		{
+			throw std::invalid_argument( "hexadecimal_string_to_bytes requires an even number of characters" );
+		}
 
-	start = std::max<ptrdiff_t>( 0, start );
-	end = std::min<ptrdiff_t>( end, dataSize );
+		std::vector<uint8_t> bytes;
+		bytes.reserve( hexadecimal_string.size() / 2 );
 
-	if ( start >= end )
-	{
-		return {};
-	}
-
-	std::vector<uint8_t> sub_array;
-	if ( step > 0 )
-	{
-		auto first = data.begin() + start;
-		auto last  = data.begin() + end;
-		std::copy_if(
-			first,
-			last,
-			std::back_inserter( sub_array ),
-			[ n = 0, step ]( const uint8_t& ) mutable
+		auto hexadecimal_digit_value = []( char character ) -> uint8_t {
+			if ( character >= '0' && character <= '9' )
 			{
-				return n++ % step == 0;
-			} );
-	}
-	else
-	{
-		auto first = data.rbegin() + ( dataSize - end );
-		auto last  = data.rbegin() + ( dataSize - start );
-		std::copy_if(
-			first,
-			last,
-			std::back_inserter( sub_array ),
-			[ n = 0, step ]( const uint8_t& ) mutable
+				return static_cast<uint8_t>( character - '0' );
+			}
+			if ( character >= 'a' && character <= 'f' )
 			{
-				return n++ % -step == 0;
-			} );
+				return static_cast<uint8_t>( character - 'a' + 10 );
+			}
+			if ( character >= 'A' && character <= 'F' )
+			{
+				return static_cast<uint8_t>( character - 'A' + 10 );
+			}
+			throw std::invalid_argument( "hexadecimal_string_to_bytes encountered a non-hexadecimal character" );
+		};
+
+		for ( std::size_t index = 0; index < hexadecimal_string.size(); index += 2 )
+		{
+			const uint8_t high = hexadecimal_digit_value( hexadecimal_string[ index ] );
+			const uint8_t low = hexadecimal_digit_value( hexadecimal_string[ index + 1 ] );
+			bytes.push_back( static_cast<uint8_t>( ( high << 4 ) | low ) );
+		}
+
+		return bytes;
 	}
 
-	return sub_array;
+	bool expect_equal_tag( const std::string& test_name, const std::vector<uint8_t>& actual, const std::vector<uint8_t>& expected )
+	{
+		if ( actual == expected )
+		{
+			return true;
+		}
+
+		std::cerr << test_name << " failed\n"
+				  << "  expected: " << bytes_to_hexadecimal_string( expected ) << "\n"
+				  << "  actual:   " << bytes_to_hexadecimal_string( actual ) << std::endl;
+		return false;
+	}
+}  // namespace
+
+// ---- Constant definitions ----
+
+const BigInteger HardPoly1305::P1( "1361129467683753853853498429727072845819" );  // 2^130 - 5
+
+const BigInteger HardPoly1305::P2( "115792089237316195423570985008687907853269984665640564039457584007913129451867" );	// 2^256 - 188069
+
+const BigInteger HardPoly1305::MASK_256 = ( BigInteger( 1 ) << 256 ) - BigInteger( 1 );
+const BigInteger HardPoly1305::MASK_128 = ( BigInteger( 1 ) << 128 ) - BigInteger( 1 );
+
+// Easy-BigInteger base-16 parsing expects digits only. Do not add a "0x" prefix.
+const BigInteger HardPoly1305::CLAMP_MASK( "0ffffffc0ffffffc0ffffffc0fffffff", 16 );
+
+const BigInteger HardPoly1305::A7_SHIFT_248 = BigInteger( 0xA7 ) << 248;
+const BigInteger HardPoly1305::TWO_129 = BigInteger( 1 ) << 129;
+const BigInteger HardPoly1305::TWO_193 = BigInteger( 1 ) << 193;
+
+// ---- Static helpers ----
+
+BigInteger HardPoly1305::bytes_to_integer_little_endian( const std::vector<uint8_t>& bytes )
+{
+	BigInteger integer;
+	integer.ImportData( bytes, false );
+	return integer;
 }
 
-std::string BytesToHexString( const std::vector<uint8_t>& bytes )
+std::vector<uint8_t> HardPoly1305::integer_to_bytes_little_endian( const BigInteger& integer, std::size_t length )
 {
-	std::ostringstream oss;
-	for ( const auto& byte : bytes )
-	{
-		oss << std::hex << std::setw( 2 ) << std::setfill( '0' ) << static_cast<int>( byte );
-	}
-	return oss.str();
-}
-
-std::vector<uint8_t> generate_random_bytes( size_t size )
-{
-	std::vector<uint8_t>		  bytes( size );
-	std::random_device			  rd;
-	std::mt19937				  gen( rd() );
-	std::uniform_int_distribution dis( 0, 255 );
-	for ( size_t i = 0; i < size; ++i )
-	{
-		bytes[ i ] = static_cast<uint8_t>( dis( gen ) );
-	}
+	// Easy-BigInteger::ExportData is currently non-const, so export from a copy.
+	BigInteger			 export_copy = integer;
+	std::vector<uint8_t> bytes;
+	export_copy.ExportData( bytes, length, false );
 	return bytes;
 }
 
-// ---------------------------------------------------------------------
-// [Sec 1.1] 从 master_key 派生 HardPoly1305KeyParams
-// ---------------------------------------------------------------------
-HardPoly1305KeyParams HardPoly1305::derive_key_parameters( const std::vector<uint8_t>& master_key ) const
+BigInteger HardPoly1305::rotate_left_256( const BigInteger& value, uint32_t shift )
 {
-	if ( master_key.size() < 32 )
+	const uint32_t	 normalized_shift = shift % 256;
+	const BigInteger normalized_value = value & MASK_256;
+
+	if ( normalized_shift == 0 )
 	{
-		throw std::invalid_argument( "HardPoly1305 V2-Lite requires master_key >= 32 bytes" );
+		return normalized_value;
 	}
 
-	// 只取前 32 字节
-	std::vector<uint8_t> key32( master_key.begin(), master_key.begin() + 32 );
-
-	// k_h <- key[0:16] (LE) mod p
-	std::vector<uint8_t> key_lo( key32.begin(), key32.begin() + 16 );
-	std::vector<uint8_t> key_hi( key32.begin() + 16, key32.begin() + 32 );
-
-	BigSignedInteger k_high; //Key Bit high part
-	BigSignedInteger k_low; //Key Bit low part (math : k_x)
-	BigSignedInteger k_mix;
-	BigSignedInteger k_mix2;
-
-	k_high.ImportData( false, key_lo ); // little-endian
-	k_high %= p;
-
-	// k_x <- key[16:32] (LE) mod p
-	k_low.ImportData( false, key_hi );
-	k_low %= p;
-
-	// k_mix <- key[0:32] (LE) mod p2
-	k_mix.ImportData( false, key32 );
-	k_mix %= p2;
-
-	// k_mix2 = (3 * k_mix + GOLDEN_RATIO_CONST) mod p2
-	BigSignedInteger golden_const( "9E3779B97F4A7C15", 16 );
-	k_mix2 = ( k_mix * BigSignedInteger( 3 ) + golden_const ) % p2;
-
-	return HardPoly1305KeyParams( k_high, k_low, k_mix, k_mix2 );
+	const uint32_t right_shift = 256 - normalized_shift;
+	return ( ( normalized_value << normalized_shift ) | ( normalized_value >> right_shift ) ) & MASK_256;
 }
 
-// ---------------------------------------------------------------------
-// [Sec 1.4] h_core: u_i = h_core(h_{i-1}, X_i, params)
-//   1) F1 上的三次多项式 alpha
-//   2) 256-bit bit 域 + NOT-AND + ROTL_256(127) + XOR
-//   3) 回到 F2 上得到 u
-// ---------------------------------------------------------------------
-BigSignedInteger HardPoly1305::h_core(
-	const BigSignedInteger& hash_value,
-	const BigSignedInteger& block_value,
-	const HardPoly1305KeyParams& params ) const
+void HardPoly1305::derive_pre_mix_parameters( const std::vector<uint8_t>& key, const BigInteger& encoded_context, BigInteger& key_integer, BigInteger& rotated_key_context, BigInteger& multiplier_mask, BigInteger& additive_mask, BigInteger& reduced_key )
 {
-	// 1) F1 = Z_{p} 上的高次多项式 alpha
-	BigSignedInteger h_f1 = hash_value % p;
-	BigSignedInteger x_f1 = block_value % p;
-
-	//A = (h_f1 + x_f1 + params.k_h)^{2}
-	BigSignedInteger t1		= h_f1 + x_f1 + params.k_h;
-	BigSignedInteger t1_square = t1 * t1;
-
-	//B = (x_f1 - h_f1 + params.k_x)^{3}
-	BigSignedInteger t2		= x_f1 - h_f1 + params.k_x;
-	BigSignedInteger t2_cube = t2 * t2 * t2;
-
-	//C = A + B (mod PrimeNumber) 
-	BigSignedInteger alpha = ( t1_square + t2_cube ) % p;
-
-	// 2) bit 域 + ARX-like
-	// alpha_bits = C mod 2^{256}
-	// key_mix = params.k_mix mod 2^{256}
-	// key_mix2 = params.k_mix2 mod 2^{256}
-	BigSignedInteger alpha_bits = alpha & bit_256_mask;
-	BigSignedInteger key_mix			= params.k_mix & bit_256_mask;
-	BigSignedInteger key_mix2		= params.k_mix2 & bit_256_mask;
-
-	// NOT-AND: ~(alpha_bits & km2) & 2^256-1
-	BigSignedInteger t_and = alpha_bits & key_mix2;
-	BigSignedInteger t_not = ~t_and;
-	t_not &= bit_256_mask;
-
-	// tmp = km XOR t_not
-	BigSignedInteger tmp = key_mix ^ t_not;
-
-	// 256-bit 循环左移 127 位
-	BigSignedInteger tmp_left  = ( tmp << 127 ) & bit_256_mask;
-	BigSignedInteger tmp_right = tmp >> ( 256 - 127 );
-	BigSignedInteger rotated_left = tmp_left | tmp_right;
-
-	tmp ^= rotated_left;
-
-	// 3) 回到 F2 = Z_{p2}
-	// ARX-like (Modular Addition)
-	BigSignedInteger u = ( hash_value + tmp ) % p2;
-
-	return u;
-}
-
-// ---------------------------------------------------------------------
-// [Sec 1.5] derive_r_s_from_u: 从 256-bit u_i 导出 (r_i, s_i)
-//   - u 按小端导出为 32 字节：u_bytes[0:16] -> r_raw, [16:32] -> s_raw
-//   - r_i = clamp(r_raw)
-//   - s_i = s_raw & (2^128-1)
-// ---------------------------------------------------------------------
-void HardPoly1305::derive_r_s_from_u(
-	const BigSignedInteger& u_value,
-	BigSignedInteger& r_out,
-	BigSignedInteger& s_out ) const
-{
-	// 先限制到 256 bit
-	BigSignedInteger u_256 = u_value & bit_256_mask;
-
-	// 导出为 32 字节小端
-	std::vector<uint8_t> u_bytes;
-	bool				 is_negative = false;
-	u_256.ExportData( is_negative, u_bytes, 32, false );
-
-	// 低 16 字节 -> r_raw
-	std::vector<uint8_t> r_bytes( u_bytes.begin(), u_bytes.begin() + 16 );
-	BigSignedInteger		 r_raw;
-	r_raw.ImportData( false, r_bytes );
-	r_out = r_raw & clamp_bit_mask;
-
-	// 高 16 字节 -> s_raw
-	std::vector<uint8_t> s_bytes( u_bytes.begin() + 16, u_bytes.begin() + 32 );
-	BigSignedInteger		 s_raw;
-	s_raw.ImportData( false, s_bytes );
-
-	// s_i 只保留 128 bit: s_i = s_raw & (2^128 - 1)
-	BigSignedInteger mask128 = ( ( BigSignedInteger( 1 ) << 128 ) - BigSignedInteger( 1 ) );
-	s_out				 = s_raw & mask128;
-}
-
-// ---------------------------------------------------------------------
-// [Sec 1.2] 消息 & 密钥混合：mixed(M, K)
-// ---------------------------------------------------------------------
-std::vector<uint8_t> HardPoly1305::mix_key_and_message( const std::vector<uint8_t>& message,
-														const std::vector<uint8_t>& key )
-{
-	if ( key.empty() )
+	if ( key.size() != 32 )
 	{
-		throw std::invalid_argument( "HardPoly1305::mix_key_and_message: key must not be empty" );
-	}
-	if ( key.size() < 32 )
-	{
-		throw std::invalid_argument( "HardPoly1305::mix_key_and_message: key length must be >= 32" );
+		throw std::invalid_argument( "HardPoly1305-SP key must contain exactly 32 bytes" );
 	}
 
-	std::vector<uint8_t> mixed_data( message.size(), 0 );
-	size_t				  key_index = 0;
+	key_integer = bytes_to_integer_little_endian( key );
+	key_integer &= MASK_256;
 
-	for ( size_t i = 0; i < message.size(); ++i )
+	const BigInteger key_context = key_integer ^ encoded_context;
+	rotated_key_context = rotate_left_256( key_context, 97 );
+	multiplier_mask = rotated_key_context & MASK_128;
+	additive_mask = ( rotated_key_context >> 128 ) & MASK_128;
+	reduced_key = key_integer % P2;
+}
+
+void HardPoly1305::rx_transform( const BigInteger& core_output, BigInteger& lower_output, BigInteger& upper_output )
+{
+	// Four little-endian 64-bit lanes.
+	const uint64_t lane_0 = core_output.GetBlock( 0 );
+	const uint64_t lane_1 = core_output.GetBlock( 1 );
+	const uint64_t lane_2 = core_output.GetBlock( 2 );
+	const uint64_t lane_3 = core_output.GetBlock( 3 );
+
+	auto rotate_left_64 = []( uint64_t value, uint32_t shift ) -> uint64_t {
+		return static_cast<uint64_t>( ( value << shift ) | ( value >> ( 64 - shift ) ) );
+	};
+
+	const uint64_t rotated_0 = rotate_left_64( lane_0, 7 );
+	const uint64_t rotated_1 = rotate_left_64( lane_1, 19 );
+	const uint64_t rotated_2 = rotate_left_64( lane_2, 37 );
+	const uint64_t rotated_3 = rotate_left_64( lane_3, 53 );
+
+	const uint64_t mixed_0 = rotated_1 ^ rotated_2 ^ rotated_3;
+	const uint64_t mixed_1 = rotated_0 ^ rotated_2 ^ rotated_3;
+	const uint64_t mixed_2 = rotated_0 ^ rotated_1 ^ rotated_3;
+	const uint64_t mixed_3 = rotated_0 ^ rotated_1 ^ rotated_2;
+
+	lower_output = BigInteger( mixed_0 ) | ( BigInteger( mixed_1 ) << 64 );
+	upper_output = BigInteger( mixed_2 ) | ( BigInteger( mixed_3 ) << 64 );
+}
+
+// ---- Class implementation ----
+
+HardPoly1305::HardPoly1305() : key_stored( 0 ), encoded_context_stored( 0 ), rotated_key_context_stored( 0 ), multiplier_mask_stored( 0 ), additive_mask_stored( 0 ), reduced_key_stored( 0 ), reduced_context_stored( 0 ), context_ready( false ) {}
+
+HardPoly1305::~HardPoly1305()
+{
+	clear_context();
+}
+
+void HardPoly1305::clear_context()
+{
+	// Best-effort logical clearing. See the header warning about dynamic storage.
+	key_stored = BigInteger( 0 );
+	encoded_context_stored = BigInteger( 0 );
+	rotated_key_context_stored = BigInteger( 0 );
+	multiplier_mask_stored = BigInteger( 0 );
+	additive_mask_stored = BigInteger( 0 );
+	reduced_key_stored = BigInteger( 0 );
+	reduced_context_stored = BigInteger( 0 );
+	context_ready = false;
+}
+
+std::vector<uint8_t> HardPoly1305::mix_key_and_message( const std::vector<uint8_t>& message, const std::vector<uint8_t>& key, const std::vector<uint8_t>& nonce, const std::vector<uint8_t>& tweak, const std::vector<uint8_t>& theta )
+{
+	if ( key.size() != 32 )
 	{
-		mixed_data[ i ] = static_cast<uint8_t>( ( message[ i ] + key[ key_index ] ) & 0xFF );
-		++key_index;
-		if ( key_index == key.size() )
+		throw std::invalid_argument( "HardPoly1305::mix_key_and_message: key must contain exactly 32 bytes" );
+	}
+	if ( nonce.size() != 12 )
+	{
+		throw std::invalid_argument( "HardPoly1305::mix_key_and_message: nonce must contain exactly 12 bytes" );
+	}
+	if ( tweak.size() != 12 )
+	{
+		throw std::invalid_argument( "HardPoly1305::mix_key_and_message: tweak must contain exactly 12 bytes" );
+	}
+	if ( theta.size() != 8 )
+	{
+		throw std::invalid_argument( "HardPoly1305::mix_key_and_message: theta must contain exactly 8 bytes" );
+	}
+
+	// E = IntLE(nonce || tweak || LE64(theta)) XOR (0xA7 << 248).
+	std::vector<uint8_t> encoded_context_bytes;
+	encoded_context_bytes.reserve( 32 );
+	encoded_context_bytes.insert( encoded_context_bytes.end(), nonce.begin(), nonce.end() );
+	encoded_context_bytes.insert( encoded_context_bytes.end(), tweak.begin(), tweak.end() );
+	encoded_context_bytes.insert( encoded_context_bytes.end(), theta.begin(), theta.end() );
+
+	BigInteger encoded_context = bytes_to_integer_little_endian( encoded_context_bytes );
+	encoded_context ^= A7_SHIFT_248;
+	encoded_context &= MASK_256;
+
+	BigInteger key_integer;
+	BigInteger rotated_key_context;
+	BigInteger multiplier_mask;
+	BigInteger additive_mask;
+	BigInteger reduced_key;
+
+	derive_pre_mix_parameters( key, encoded_context, key_integer, rotated_key_context, multiplier_mask, additive_mask, reduced_key );
+
+	key_stored = key_integer;
+	encoded_context_stored = encoded_context;
+	rotated_key_context_stored = rotated_key_context;
+	multiplier_mask_stored = multiplier_mask;
+	additive_mask_stored = additive_mask;
+	reduced_key_stored = reduced_key;
+	reduced_context_stored = encoded_context % P2;
+	context_ready = true;
+
+	// The SP PreMix does not alter the message.
+	return message;
+}
+
+std::vector<uint8_t> HardPoly1305::hard_poly1305_core( const std::vector<uint8_t>& message, const std::vector<uint8_t>& key_override ) const
+{
+	if ( !context_ready )
+	{
+		throw std::runtime_error( "HardPoly1305::hard_poly1305_core called before mix_key_and_message" );
+	}
+
+	if ( message.size() > static_cast<std::size_t>( std::numeric_limits<uint64_t>::max() ) )
+	{
+		throw std::length_error( "HardPoly1305-SP message length does not fit the 64-bit frame length" );
+	}
+
+	BigInteger multiplier_mask = multiplier_mask_stored;
+	BigInteger additive_mask = additive_mask_stored;
+	BigInteger reduced_key = reduced_key_stored;
+
+	// The historical API permits a key override. Re-derive it correctly instead
+	// of silently ignoring it.
+	if ( !key_override.empty() )
+	{
+		BigInteger override_key_integer;
+		BigInteger override_rotated_key_context;
+
+		derive_pre_mix_parameters( key_override, encoded_context_stored, override_key_integer, override_rotated_key_context, multiplier_mask, additive_mask, reduced_key );
+	}
+
+	// Frame(message) = LE64(message length) || message || 0xA7.
+	std::vector<uint8_t> frame;
+	frame.reserve( 8 + message.size() + 1 );
+
+	const uint64_t message_length = static_cast<uint64_t>( message.size() );
+	for ( uint32_t byte_index = 0; byte_index < 8; ++byte_index )
+	{
+		frame.push_back( static_cast<uint8_t>( ( message_length >> ( 8 * byte_index ) ) & 0xFFU ) );
+	}
+	frame.insert( frame.end(), message.begin(), message.end() );
+	frame.push_back( 0xA7 );
+
+	BigInteger	accumulator( 0 );
+	std::size_t block_index = 0;
+
+	for ( std::size_t position = 0; position < frame.size(); position += 16, ++block_index )
+	{
+		const std::size_t block_length = std::min<std::size_t>( 16, frame.size() - position );
+
+		std::vector<uint8_t> block( frame.begin() + static_cast<std::ptrdiff_t>( position ), frame.begin() + static_cast<std::ptrdiff_t>( position + block_length ) );
+
+		// m = IntLE(block) + 2^(8 * block_length).
+		BigInteger message_block = bytes_to_integer_little_endian( block );
+		message_block += BigInteger( 1 ) << static_cast<uint32_t>( 8 * block_length );
+
+		const BigInteger block_index_integer( static_cast<uint64_t>( block_index ) );
+
+		// c = m + 2^129 * i + 2^193.
+		const BigInteger block_encoding = message_block + TWO_129 * block_index_integer + TWO_193;
+
+		// beta = Kbar + Ebar + 5*i + 0xA7 mod P2.
+		const BigInteger beta = ( reduced_key + reduced_context_stored + BigInteger( 5 ) * block_index_integer + BigInteger( 0xA7 ) ) % P2;
+
+		// u = h + c + beta mod P2.
+		const BigInteger core_input = ( accumulator + block_encoding + beta ) % P2;
+
+		// A = u^3 + 2*beta mod P2.
+		const BigInteger core_input_squared = ( core_input * core_input ) % P2;
+		const BigInteger core_output = ( core_input_squared * core_input + BigInteger( 2 ) * beta ) % P2;
+
+		BigInteger lower_rx_output;
+		BigInteger upper_rx_output;
+		rx_transform( core_output, lower_rx_output, upper_rx_output );
+
+		// SplitClamp.
+		const BigInteger multiplier = ( lower_rx_output ^ multiplier_mask ) & CLAMP_MASK;
+		const BigInteger additive_value = upper_rx_output ^ additive_mask;
+
+		// h = r * (h + m) + s mod P1.
+		accumulator = ( multiplier * ( accumulator + message_block ) + additive_value ) % P1;
+	}
+
+	const BigInteger tag = accumulator & MASK_128;
+	return integer_to_bytes_little_endian( tag, 16 );
+}
+
+// ---- Convenience wrapper ----
+
+std::vector<uint8_t> hardpoly1305_sp_tag( const std::vector<uint8_t>& message, const std::vector<uint8_t>& key, const std::vector<uint8_t>& nonce, const std::vector<uint8_t>& tweak, const std::vector<uint8_t>& theta )
+{
+	HardPoly1305 authenticator;
+	authenticator.mix_key_and_message( message, key, nonce, tweak, theta );
+	return authenticator.hard_poly1305_core( message );
+}
+
+// ---- Deterministic self-tests ----
+
+bool hardpoly1305_sp_self_test()
+{
+	try
+	{
+		bool all_tests_passed = true;
+
+		// KAT 1: all-zero key/context and empty message.
 		{
-			key_index = 0;
-		}
-	}
+			const std::vector<uint8_t> message;
+			const std::vector<uint8_t> key( 32, 0 );
+			const std::vector<uint8_t> nonce( 12, 0 );
+			const std::vector<uint8_t> tweak( 12, 0 );
+			const std::vector<uint8_t> theta( 8, 0 );
+			const std::vector<uint8_t> expected = hexadecimal_string_to_bytes( "12fe2132b7c4ddb56c01ebcd9e78c5b8" );
 
-	// 保证“纠缠长度”至少 32 字节：如果 mixed < 32，则补 key[mixed_len:]
-	if ( mixed_data.size() < 32 && key.size() > mixed_data.size() )
-	{
-		size_t start = mixed_data.size();
-		for ( size_t i = start; i < key.size(); ++i )
+			const std::vector<uint8_t> actual = hardpoly1305_sp_tag( message, key, nonce, tweak, theta );
+
+			all_tests_passed &= expect_equal_tag( "HardPoly1305-SP KAT 1", actual, expected );
+		}
+
+		// KAT 2: 15-byte message, immediately below a 16-byte message boundary.
 		{
-			mixed_data.push_back( key[ i ] );
+			std::vector<uint8_t> message( 15 );
+			std::vector<uint8_t> key( 32 );
+			std::vector<uint8_t> nonce( 12 );
+			std::vector<uint8_t> tweak( 12 );
+			std::vector<uint8_t> theta( 8 );
+
+			for ( std::size_t index = 0; index < message.size(); ++index )
+			{
+				message[ index ] = static_cast<uint8_t>( index );
+			}
+			for ( std::size_t index = 0; index < key.size(); ++index )
+			{
+				key[ index ] = static_cast<uint8_t>( index );
+			}
+			for ( std::size_t index = 0; index < nonce.size(); ++index )
+			{
+				nonce[ index ] = static_cast<uint8_t>( index );
+				tweak[ index ] = static_cast<uint8_t>( 0x20 + index );
+			}
+			for ( std::size_t index = 0; index < theta.size(); ++index )
+			{
+				theta[ index ] = static_cast<uint8_t>( 0x40 + index );
+			}
+
+			const std::vector<uint8_t> expected = hexadecimal_string_to_bytes( "b2facc0397a2446115d0a91ef6e89101" );
+			const std::vector<uint8_t> actual = hardpoly1305_sp_tag( message, key, nonce, tweak, theta );
+
+			all_tests_passed &= expect_equal_tag( "HardPoly1305-SP KAT 2", actual, expected );
+
+			// Verify that the old key_override API now really overrides the key.
+			HardPoly1305			   authenticator;
+			const std::vector<uint8_t> wrong_initial_key( 32, 0 );
+			authenticator.mix_key_and_message( message, wrong_initial_key, nonce, tweak, theta );
+
+			const std::vector<uint8_t> override_actual = authenticator.hard_poly1305_core( message, key );
+			all_tests_passed &= expect_equal_tag( "HardPoly1305-SP key override", override_actual, expected );
 		}
-	}
 
-	return mixed_data;
+		// KAT 3: 17-byte message, immediately above a 16-byte message boundary.
+		{
+			std::vector<uint8_t>	   message( 17 );
+			std::vector<uint8_t>	   key( 32 );
+			const std::vector<uint8_t> nonce( 12, 0xA5 );
+			const std::vector<uint8_t> tweak( 12, 0x5A );
+			const std::vector<uint8_t> theta = { 0xEF, 0xCD, 0xAB, 0x89, 0x67, 0x45, 0x23, 0x01 };
+
+			for ( std::size_t index = 0; index < message.size(); ++index )
+			{
+				message[ index ] = static_cast<uint8_t>( index );
+			}
+			for ( std::size_t index = 0; index < key.size(); ++index )
+			{
+				key[ index ] = static_cast<uint8_t>( 0xFF - index );
+			}
+
+			const std::vector<uint8_t> expected = hexadecimal_string_to_bytes( "97e58f7c773a40d6af4e05ad3fa7829d" );
+			const std::vector<uint8_t> actual = hardpoly1305_sp_tag( message, key, nonce, tweak, theta );
+
+			all_tests_passed &= expect_equal_tag( "HardPoly1305-SP KAT 3", actual, expected );
+		}
+
+		// The specification requires exactly 32 key bytes.
+		{
+			bool rejected_short_key = false;
+			bool rejected_long_key = false;
+
+			try
+			{
+				hardpoly1305_sp_tag( {}, std::vector<uint8_t>( 31, 0 ) );
+			}
+			catch ( const std::invalid_argument& )
+			{
+				rejected_short_key = true;
+			}
+
+			try
+			{
+				hardpoly1305_sp_tag( {}, std::vector<uint8_t>( 33, 0 ) );
+			}
+			catch ( const std::invalid_argument& )
+			{
+				rejected_long_key = true;
+			}
+
+			if ( !rejected_short_key || !rejected_long_key )
+			{
+				std::cerr << "HardPoly1305-SP exact key-length test failed" << std::endl;
+				all_tests_passed = false;
+			}
+		}
+
+		if ( all_tests_passed )
+		{
+			std::cout << "HardPoly1305-SP self-test: all tests passed" << std::endl;
+		}
+
+		return all_tests_passed;
+	}
+	catch ( const std::exception& exception )
+	{
+		std::cerr << "HardPoly1305-SP self-test raised an exception: " << exception.what() << std::endl;
+		return false;
+	}
 }
 
-// ---------------------------------------------------------------------
-// [Sec 1.6] HardPoly1305 V2-Lite 主算法
-//
-// 输入：
-//   mixed_data = mixed(message, key)   （先调用 mix_key_and_message）
-//   key        = master_key (>= 32 bytes)
-//
-// 流程：
-//   1) params = derive_key_parameters(key)
-//   2) 将 mixed_data 按 16 字节分块，每块编码 X_i = LE(block || 0x01)
-//   3) h_0 = 0; 对每个块：
-//        u_i        = h_core(h_{i-1}, X_i, params)
-//        (r_i,s_i)  = derive_r_s_from_u(u_i)
-//        h_i        = r_i * (h_{i-1}+X_i) + s_i (mod p)
-//   4) tag = h_t mod 2^128，以 16 字节小端返回
-// ---------------------------------------------------------------------
-std::vector<uint8_t> HardPoly1305::hard_poly1305_core( const std::vector<uint8_t>& mixed_data,
-													   const std::vector<uint8_t>& key )
-{
-	if ( key.size() < 32 )
-	{
-		throw std::invalid_argument( "HardPoly1305::hard_poly1305_core: key length must be >= 32" );
-	}
-
-	// [Sec 1.1] 派生内部参数
-	HardPoly1305KeyParams params = derive_key_parameters( key );
-
-	// [Sec 1.6] 迭代 Poly1305 形状的随机系数多项式 MAC
-	BigSignedInteger hash_value = 0; // h_0 = 0
-
-	const size_t total_len = mixed_data.size();
-
-	for ( size_t offset = 0; offset < total_len; offset += 16 )
-	{
-		// 当前块的 [offset, offset+16)，不足 16 的最后一块如实取长度
-		ptrdiff_t start = static_cast<ptrdiff_t>( offset );
-		ptrdiff_t end   = static_cast<ptrdiff_t>( std::min( offset + 16, total_len ) );
-
-		std::vector<uint8_t> block_bytes = SubByteArray( mixed_data, start, end, 1 );
-		block_bytes.push_back( 0x01 ); // encode_block_with_one: append 0x01 (little endian high bit)
-
-		// LE 导入为整数 X_i
-		BigSignedInteger block_value;
-		block_value.ImportData( false, block_bytes );
-
-		// u_i = h_core(h_{i-1}, X_i, params)
-		BigSignedInteger u_value = h_core( hash_value, block_value, params );
-
-		// (r_i, s_i) 从 u_i 导出
-		BigSignedInteger r_i;
-		BigSignedInteger s_i;
-		derive_r_s_from_u( u_value, r_i, s_i );
-
-		// h_i = r_i * (h_{i-1} + X_i) + s_i (mod p)
-		BigSignedInteger hash_plus_block = ( hash_value + block_value ) % p;
-		hash_value					= ( r_i * hash_plus_block + s_i ) % p;
-	}
-
-	// 截断到 128 bit：tag = h_t mod 2^128
-	BigSignedInteger tag_value = hash_value % hash_max_number;
-
-	std::vector<uint8_t> tag_bytes;
-	bool				 is_negative = false;
-	tag_value.ExportData( is_negative, tag_bytes, 16, false ); // 16 字节小端
-
-	return tag_bytes;
-}
-
-// ---------------------------------------------------------------------
-// 简单自测：跟 Python 版一样做个 smoke test
-// ---------------------------------------------------------------------
 void test_hard_poly1305()
 {
-	using BigSignedInteger = TwilightDream::BigInteger::BigSignedInteger;
-
-	HardPoly1305 hard_poly1305;
-
-	// 固定 key（和 Python 自测保持一致风格）
-	std::vector<uint8_t> key( 32 );
-	for ( size_t i = 0; i < key.size(); ++i )
+	if ( !hardpoly1305_sp_self_test() )
 	{
-		key[ i ] = static_cast<uint8_t>( i );
-	}
-
-	std::vector<std::vector<uint8_t>> message_list;
-
-	message_list.push_back( {} );
-	{
-		const char* s = "Hello, HardPoly1305!";
-		message_list.emplace_back( s, s + std::strlen( s ) );
-	}
-	message_list.emplace_back( 16, 'A' );
-	message_list.emplace_back( 31, 'A' );
-	message_list.emplace_back( 32, 'A' );
-	message_list.emplace_back( 100, 'A' );
-
-	std::cout << "HardPoly1305 V2-Lite quick self-test (C++ version)\n";
-
-	for ( size_t i = 0; i < message_list.size(); ++i )
-	{
-		const auto& m = message_list[ i ];
-		auto		 mixed_data = hard_poly1305.mix_key_and_message( m, key );
-		auto		 tag		  = hard_poly1305.hard_poly1305_core( mixed_data, key );
-
-		std::cout << "[" << i << "] len=" << m.size() << ", tag=" << BytesToHexString( tag ) << "\n";
-	}
-
-	// 一致性检查：同一 (msg, key) 重复调用必须得到相同 tag
-	std::vector<uint8_t> rand_key = generate_random_bytes( 32 );
-	std::vector<uint8_t> rand_msg = generate_random_bytes( 123 );
-
-	auto mixed1 = hard_poly1305.mix_key_and_message( rand_msg, rand_key );
-	auto mixed2 = hard_poly1305.mix_key_and_message( rand_msg, rand_key );
-
-	auto t1 = hard_poly1305.hard_poly1305_core( mixed1, rand_key );
-	auto t2 = hard_poly1305.hard_poly1305_core( mixed2, rand_key );
-
-	if ( t1 != t2 )
-	{
-		std::cerr << "Self-test failed: tags for same (msg,key) are different.\n";
-	}
-	else
-	{
-		std::cout << "Self-test passed.\n";
+		throw std::runtime_error( "HardPoly1305-SP self-test failed" );
 	}
 }

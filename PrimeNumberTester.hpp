@@ -28,92 +28,40 @@ SOFTWARE.
 #ifndef TWILIGHT_DREAM_PRIME_NUMBER_TESTER_HPP
 #define TWILIGHT_DREAM_PRIME_NUMBER_TESTER_HPP
 
-#include "BigInteger.hpp"
-#include "BigFraction.hpp"
-#include <thread>
-#include <future>
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <vector>
+
+#include "Lenstra-Pomerance_AKS.hpp"
+#include "SimplifiedQuadraticFrobeniusPrimalityTesterWithThirdRootsOfUnity.hpp"
 
 namespace TwilightDream
 {
-	class AKS_Test
-	{
-	private:
-		using BigInteger = TwilightDream::BigInteger::BigInteger;
-		using BigFraction = TwilightDream::BigFraction::BigFraction;
-		using HashFunction = TwilightDream::BigInteger::HashFunction;
-
-		struct Polynomial
-		{
-			// Coefficient vector: coefficient[i] denotes the coefficient of x^i
-			std::vector<TwilightDream::BigInteger::BigInteger> coefficients;
-
-			Polynomial(size_t degree_count = 1);
-
-			Polynomial(const BigInteger& coefficient);
-
-			Polynomial(const std::vector<BigInteger>& coefficient);
-			
-			Polynomial(const Polynomial& other) noexcept;
-
-			Polynomial(Polynomial &&other) noexcept;
-
-			Polynomial& operator=(const Polynomial& other) noexcept;
-
-			Polynomial& operator=(Polynomial &&other) noexcept;
-
-			// Getting the subscript of the highest sub-item
-			size_t degree() const;
-
-			// 获取和设置系数
-			BigInteger GetCoefficient(size_t i) const;
-
-			void SetCoefficient(const BigInteger &c, size_t i);
-
-			Polynomial MultiplyModulo(const Polynomial& other, const BigInteger& modulo, uint64_t poly_modulo );
-
-			Polynomial PowerModulo(const BigInteger& exp, const BigInteger& modulo, uint64_t poly_modulo );
-
-			bool operator==(const Polynomial& other) const;
-
-			bool operator!=(const Polynomial& other) const;
-
-			void Compact();
-
-			void Clear();
-		};
-
-		void CheckValueA(BigInteger lower_bound, const BigInteger& r, size_t index, const BigInteger N, std::atomic_bool& result_signal);
-
-		bool IsPerfectPower( const BigInteger& N );
-	public:
-		/**
-		* Performs the Agrawal–Kayal–Saxena primality test on a BigInteger.
-		*
-		* The AKS primality test is a deterministic algorithm for proving the primality of a number.
-		* It is based on the following polynomial congruences:
-		*	Input: integer n > 1.
-		*		1. If (n == a^{b} for a ∈ N and b > 1)
-					output COMPOSITE.
-		*		2. Find the smallest r such that order_r(n) > log_{2}(n).
-		*		3. If 1 < gcd(a, n) < n for some a ≤ r
-					output COMPOSITE.
-		*		4. If n ≤ r, output PRIME.
-		*		5. For a = 1 to floor(sqrt(φ(r))) * log( n) do
-		*			if ((X + a)^{n} != X^{n} + a mod (X^{r} − 1, n)), output COMPOSITE;
-		*		6. Output PRIME;
-		*
-		* @param n The BigInteger to test for primality.
-		* @return true if the BigInteger is prime, false otherwise.
-		* @see https://www.cse.iitk.ac.in/users/manindra/algebra/primality_v6.pdf
-		*/
-		bool operator()( const BigInteger& n );
-	};
-
-	inline AKS_Test AKS_Test_Instance;
-
 	struct PrimeNumberTester
 	{
 		using BigInteger = TwilightDream::BigInteger::BigInteger;
+
+	private:
+		/*
+		 * PrimeNumberTester owns the algorithm object and delegates the public project-level call to it.  
+		 * The quadratic-extension ring, Jacobi-symbol preparation, roots of unity and probabilistic round state remain inside the dedicated class instead of being mixed into this general dispatcher.
+		 */
+		SimplifiedQuadraticFrobeniusPrimalityTesterWithThirdRootsOfUnity SimplifiedQuadraticFrobeniusPrimalityTesterWithThirdRootsOfUnityInstance;
+
+	public:
+		/**
+		 * @brief Execute Seysen's Simplified Quadratic Frobenius probable-prime test with the third-root-of-unity consistency test.
+		 *
+		 * This function is intentionally only a dispatcher.  The complete
+		 * implementation is owned by
+		 * SimplifiedQuadraticFrobeniusPrimalityTesterWithThirdRootsOfUnity.
+		 *
+		 * @param Number Non-negative integer to test.
+		 * @param TestingRounds Number of strengthened Frobenius rounds. It must  be at least one.
+		 * @return false when compositeness is detected; true when Number passes every probable-prime condition.
+		 */
+		bool SimplifiedQuadraticFrobeniusPrimalityTestWithThirdRootsOfUnity( const BigInteger& Number, std::size_t TestingRounds );
 
 		/**
 		 * @brief Miller-Rabin primality test for integer `n`.

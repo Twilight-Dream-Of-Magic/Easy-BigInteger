@@ -29,7 +29,7 @@ SOFTWARE.
 
 namespace TwilightDream::CryptographyAsymmetric
 {
-	void RSA::GeneratePrimesInParallelFunction(std::vector<FindPrimeState>& primes, size_t primes_index)
+	void RSA::GeneratePrimeNumbers(std::vector<FindPrimeState>& primes, size_t primes_index)
 	{
 		BigInteger PrimeNumber = BigInteger::RandomGenerateNBit(bit_count);
 		PrimeNumber = MIN + (PrimeNumber % RANGE_INTEGER);
@@ -50,13 +50,16 @@ namespace TwilightDream::CryptographyAsymmetric
 				Test to see if p is prime; if it is, return p; this is expected to occur after testing about Log(p)/2∼177 candidates
 				Otherwise set p=p+2, goto 2
 			*/
-			if(!IsPrime)
-			{
-				PrimeNumber += TWO;
-			}
+			PrimeNumber += TWO;
 
-			//size_t BitSize = PrimeNumber.BitSize();
-			//std::cout << "Generate BigInteger Bit Size Is :" << BitSize << std::endl;
+			if (PrimeNumber > MAX)
+			{
+				PrimeNumber = MIN;
+				if (PrimeNumber.IsEven())
+				{
+					PrimeNumber += ONE;
+				}
+			}
 			IsPrime = Tester.IsPrime(PrimeNumber);
 		}
 
@@ -64,7 +67,7 @@ namespace TwilightDream::CryptographyAsymmetric
 		primes[primes_index].Number = PrimeNumber;
 	}
 
-	std::optional<RSA::FindPrimeState> RSA::GeneratePrimesInParallelFunctions(size_t bit_count)
+	std::optional<RSA::FindPrimeState> RSA::GeneratePrimesInParallelFunctions()
 	{
 		std::vector<std::future<void>> futures;
 		const size_t				   max_thread_count = 4; //std::thread::hardware_concurrency();
@@ -72,28 +75,13 @@ namespace TwilightDream::CryptographyAsymmetric
 
 		for ( size_t i = 0; i < prime_map.size(); ++i )
 		{
-			futures.push_back( std::async( std::launch::async, &RSA::GeneratePrimesInParallelFunction, this, std::ref( prime_map ), i ) );
+			futures.push_back( std::async( std::launch::async, &RSA::GeneratePrimeNumbers, this, std::ref( prime_map ), i ) );
 		}
 
-		size_t counter = 0; // 初始化为 0，因为你可能需要等待所有线程完成
-		while (counter < futures.size())
+		// Wait for every prime-search worker and propagate any worker exception.
+		for ( auto& Future : futures )
 		{
-			for (size_t i = 0; i < futures.size(); ++i)
-			{
-				auto& future = futures[i];
-				auto status = future.wait_for(std::chrono::seconds(1));
-				if (status == std::future_status::ready)
-				{
-					if (i == counter)
-					{
-						++counter;
-					}
-				}
-				else if (status == std::future_status::timeout)
-				{
-					std::this_thread::sleep_for(std::chrono::seconds(1));
-				}
-			}
+			Future.get();
 		}
 
 		for ( const auto& state : prime_map )
@@ -115,15 +103,15 @@ namespace TwilightDream::CryptographyAsymmetric
 
 	RSA::BigInteger RSA::GeneratePrimeNumber( size_t bit_count )
 	{
+		if ( bit_count == 0 )
+			return BigInteger( 0 );
+
 		this->bit_count = bit_count;
-		MIN = BigInteger(2).Power(bit_count); // MIN: 2^{bit\_count}
-		MAX = BigInteger(2).Power(bit_count + 1) - ONE; // MAX: 2^{bit\_count + 1} - 1
+		MIN = BigInteger(TWO).Power(bit_count - 1);
+		MAX = BigInteger(TWO).Power(bit_count) - ONE;
 		RANGE_INTEGER = MAX - MIN + ONE;
 
-		if(this->bit_count == 0)
-			return BigInteger(0);
-
-		std::optional<RSA::FindPrimeState> state_data = GeneratePrimesInParallelFunctions(bit_count);
+		std::optional<RSA::FindPrimeState> state_data = GeneratePrimesInParallelFunctions();
 		
 		if(state_data.has_value())
 			return state_data.value().Number;
@@ -139,20 +127,24 @@ namespace TwilightDream::CryptographyAsymmetric
 		}
 
 		// Generate two large prime numbers
-		BigInteger PrimeNumberA = GeneratePrimeNumber(bit_count / 2);
-		if(!PrimeNumberA.IsZero())
-		{
-			std::cout << "The large prime A has been generated." << "\n";
-		}
+		BigInteger PrimeNumberA = 0;
+		BigInteger PrimeNumberB = 0;
 
-		BigInteger PrimeNumberB = GeneratePrimeNumber(bit_count / 2);
-		if(!PrimeNumberB.IsZero())
+		GeneratePrimesAgain:
+		do
 		{
-			std::cout << "The large prime B has been generated." << "\n";
+			PrimeNumberA = GeneratePrimeNumber(bit_count / 2);
+			PrimeNumberB = GeneratePrimeNumber(bit_count - bit_count / 2);
 		}
+		while (PrimeNumberA.IsZero() || PrimeNumberB.IsZero() || PrimeNumberA == PrimeNumberB);
 		
 		// Calculate n = p * q
 		BigInteger AlgorithmModulus = PrimeNumberA * PrimeNumberB;
+		
+		if(AlgorithmModulus.BitLength() != bit_count)
+		{
+			goto GeneratePrimesAgain;
+		}
 
 		// Calculate totient(n) = phi(n) = (p - 1) * (q - 1)
 		BigInteger Totient_PhiFunctionValue = (PrimeNumberA - ONE) * (PrimeNumberB - ONE);
@@ -166,7 +158,13 @@ namespace TwilightDream::CryptographyAsymmetric
 		BigInteger EncryptExponent = 0;
 		//Enable security and performance optimization?
 		if(is_pkcs)
+		{
 			EncryptExponent = 65537;
+			if (BigInteger::GCD(EncryptExponent, Totient_PhiFunctionValue) != ONE)
+			{
+				throw std::runtime_error("PKCS exponent 65537 is not coprime with phi(n).");
+			}
+		}
 		else
 		{
 			BigInteger min = 2;
@@ -255,6 +253,289 @@ namespace TwilightDream::CryptographyAsymmetric
 		//std::cout << "PlainMessage: " << CipherMessage.ToString( 10 ) << "\n";
 		//std::cout << "---------------------------------\n";
 
+	}
+	
+	void FastRSA::GeneratePrimeNumbers(std::vector<FindPrimeState>& primes, size_t primes_index)
+	{
+		BigInteger PrimeNumber = BigInteger::RandomGenerateNBit(bit_count) % RANGE_INTEGER + MIN;
+
+		if (PrimeNumber.IsEven())
+		{
+			PrimeNumber += ONE;
+		}
+
+		bool isPrime = Tester.IsPrime(PrimeNumber);
+
+		while (!isPrime)
+		{
+			PrimeNumber += TWO;
+			if (PrimeNumber > MAX)
+			{
+				PrimeNumber = MIN;
+				if (PrimeNumber.IsEven())
+				{
+					PrimeNumber += ONE;
+				}
+			}
+			isPrime = Tester.IsPrime(PrimeNumber);
+		}
+
+		primes[primes_index].IsPrime = true;
+		primes[primes_index].Number = PrimeNumber;
+	}
+
+	std::optional<FastRSA::FindPrimeState> FastRSA::GeneratePrimesInParallelFunctions()
+	{
+		std::vector<std::future<void>> futures;
+		const size_t max_thread_count = 4;
+		std::vector<FindPrimeState> prime_map(max_thread_count, FindPrimeState());
+
+		for (size_t i = 0; i < prime_map.size(); ++i)
+		{
+			futures.push_back(
+				std::async(
+					std::launch::async,
+					&FastRSA::GeneratePrimeNumbers,
+					this,
+					std::ref(prime_map),
+					i
+				)
+			);
+		}
+
+		for ( auto& Future : futures )
+		{
+			Future.get();
+		}
+
+		for (const auto& state : prime_map)
+		{
+			if (state.IsPrime)
+			{
+				return state;
+			}
+		}
+
+		return std::nullopt;
+	}
+
+	FastRSA::BigInteger FastRSA::GeneratePrimeNumber(size_t bit_count)
+	{
+		if ( bit_count == 0 )
+		{
+			return BigInteger( 0 );
+		}
+
+		this->bit_count = bit_count;
+		MIN = BigInteger(TWO).Power(bit_count - 1);
+		MAX = BigInteger(TWO).Power(bit_count) - ONE;
+		RANGE_INTEGER = MAX - MIN + ONE;
+
+		std::optional<FindPrimeState> state_data = GeneratePrimesInParallelFunctions();
+		if (state_data.has_value())
+		{
+			return state_data.value().Number;
+		}
+
+		return BigInteger(0);
+	}
+
+	FastRSA::KeyPair FastRSA::GenerateKeys(size_t bit_count, bool use_pkcs_public_exponent)
+	{
+		if (bit_count <= 1)
+		{
+			throw std::invalid_argument("Invalid bit_count values.");
+		}
+
+		BigInteger p = 0;
+		BigInteger q = 0;
+
+		GeneratePrimesAgain:
+		do
+		{
+			p = GeneratePrimeNumber(bit_count / 2);
+			q = GeneratePrimeNumber(bit_count - bit_count / 2);
+		}
+		while (p.IsZero() || q.IsZero() || p == q);
+
+		BigInteger n = p * q;
+		
+		if(n.BitLength() != bit_count)
+		{
+			goto GeneratePrimesAgain;
+		}
+		BigInteger phi = (p - ONE) * (q - ONE);
+
+		BigInteger e = 0;
+		if (use_pkcs_public_exponent)
+		{
+			e = 65537;
+			if (BigInteger::GCD(e, phi) != ONE)
+			{
+				throw std::runtime_error("PKCS exponent 65537 is not coprime with phi(n).");
+			}
+		}
+		else
+		{
+			BigInteger min = 2;
+			BigInteger max = (BigInteger{1} << (bit_count - 1)) - 1;
+			BigInteger range_integer = max - min + 1;
+
+			while (e <= 2)
+			{
+				e = BigInteger::RandomGenerateNBit(bit_count + 1) % range_integer + min;
+
+				if (e == THREE)
+				{
+					continue;
+				}
+
+				if (e.IsEven())
+				{
+					e.SetBit(0);
+				}
+			}
+
+			while (BigInteger::GCD(e, phi) != ONE)
+			{
+				e += TWO;
+			}
+		}
+
+		BigSignedInteger d_signed = BigSignedInteger::ModuloInverse(
+			BigSignedInteger(e),
+			BigSignedInteger(phi)
+		);
+		BigInteger d = NormalizeModulo(d_signed, phi);
+
+		KeyPair keyPair;
+		keyPair.PublicExponent = e;
+		keyPair.PrivateExponent = d;
+		keyPair.Modulus = n;
+
+		keyPair.PrimeP = p;
+		keyPair.PrimeQ = q;
+		keyPair.DP = d % (p - ONE);
+		keyPair.DQ = d % (q - ONE);
+		keyPair.QInverseModP = ComputeQInverseModP(q, p);
+
+		return keyPair;
+	}
+
+	void FastRSA::Encrypt(BigInteger& message, const BigInteger& publicExponent, const BigInteger& modulus) const
+	{
+		if (modulus.IsZero())
+		{
+			throw std::invalid_argument("modulus cannot be zero.");
+		}
+
+		if (message >= modulus)
+		{
+			message %= modulus;
+		}
+
+		message.PowerWithModulo(publicExponent, modulus);
+	}
+
+	void FastRSA::DecryptSlow(BigInteger& cipher, const BigInteger& privateExponent, const BigInteger& modulus) const
+	{
+		if (modulus.IsZero())
+		{
+			throw std::invalid_argument("modulus cannot be zero.");
+		}
+
+		if (cipher >= modulus)
+		{
+			cipher %= modulus;
+		}
+
+		cipher.PowerWithModulo(privateExponent, modulus);
+	}
+
+	void FastRSA::DecryptCRT(BigInteger& cipher, const KeyPair& keyPair) const
+	{
+		if (keyPair.Modulus.IsZero() || keyPair.PrimeP.IsZero() || keyPair.PrimeQ.IsZero())
+		{
+			throw std::invalid_argument("invalid CRT key.");
+		}
+
+		if (cipher >= keyPair.Modulus)
+		{
+			cipher %= keyPair.Modulus;
+		}
+
+		const BigInteger originalCipher = cipher;
+
+		BigInteger mp = cipher % keyPair.PrimeP;
+		mp.PowerWithModulo(keyPair.DP, keyPair.PrimeP);
+
+		BigInteger mq = cipher % keyPair.PrimeQ;
+		mq.PowerWithModulo(keyPair.DQ, keyPair.PrimeQ);
+
+		BigInteger diff = NonNegativeModuloDifference(mp, mq, keyPair.PrimeP);
+
+		BigInteger h = keyPair.QInverseModP;
+		h *= diff;
+		h %= keyPair.PrimeP;
+
+		BigInteger message = mq + h * keyPair.PrimeQ;
+
+		// Optional fault / correctness verification
+		BigInteger verify = message;
+		verify.PowerWithModulo(keyPair.PublicExponent, keyPair.Modulus);
+		if (verify != originalCipher)
+		{
+			throw std::runtime_error("FastRSA CRT verification failed.");
+		}
+
+		cipher = std::move(message);
+	}
+		
+	bool FastRSA::ValidateCRTKeyPair(const KeyPair& keyPair) const
+	{
+		if (keyPair.PrimeP.IsZero() || keyPair.PrimeQ.IsZero() || keyPair.Modulus.IsZero())
+		{
+			return false;
+		}
+
+		if (keyPair.PrimeP == keyPair.PrimeQ)
+		{
+			return false;
+		}
+
+		if (keyPair.PrimeP * keyPair.PrimeQ != keyPair.Modulus)
+		{
+			return false;
+		}
+
+		BigInteger phi = (keyPair.PrimeP - ONE) * (keyPair.PrimeQ - ONE);
+
+		if (BigInteger::GCD(keyPair.PublicExponent, phi) != ONE)
+		{
+			return false;
+		}
+
+		if ((keyPair.PrivateExponent * keyPair.PublicExponent) % phi != ONE)
+		{
+			return false;
+		}
+
+		if (keyPair.DP != keyPair.PrivateExponent % (keyPair.PrimeP - ONE))
+		{
+			return false;
+		}
+
+		if (keyPair.DQ != keyPair.PrivateExponent % (keyPair.PrimeQ - ONE))
+		{
+			return false;
+		}
+
+		if ((keyPair.PrimeQ * keyPair.QInverseModP) % keyPair.PrimeP != ONE)
+		{
+			return false;
+		}
+
+		return true;
 	}
 }  // namespace TwilightDream::CryptographyAsymmetric
 
